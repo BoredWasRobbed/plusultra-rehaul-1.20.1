@@ -1,0 +1,23 @@
+package net.bored.common;
+
+import net.bored.api.QuirkSystem;
+import net.bored.common.quirks.AllForOneQuirk;
+import net.minecraft.util.Identifier;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.Set;
+
+public class QuirkRegistry {
+    private static final Map<Identifier, QuirkSystem.Quirk> QUIRKS = new HashMap<>();
+
+    public static void registerAll() {
+        register(new AllForOneQuirk());
+    }
+
+    public static void register(QuirkSystem.Quirk quirk) {
+        QUIRKS.put(quirk.getId(), quirk);
+    }
+
+    public static QuirkSystem.Quirk get(Identifier id) { return QUIRKS.get(id); }
+    public static Set<Identifier> getKeys() { return QUIRKS.keySet(); }
+}
