@@ -50,7 +50,18 @@ public class QuirkHudOverlay implements HudRenderCallback {
         TextRenderer font = client.textRenderer;
 
         // --- RENDER STOCKPILE BAR (Left Side) ---
-        if ("plusultra:stockpile".equals(currentQuirkInstance.quirkId)) {
+        // Support Stockpile via direct ID OR via merged OFA
+        boolean showStockpile = "plusultra:stockpile".equals(currentQuirkInstance.quirkId);
+
+        // If it's OFA and merged with Stockpile, show the bar
+        if ("plusultra:one_for_all".equals(currentQuirkInstance.quirkId)) {
+            if (currentQuirkInstance.persistentData.contains("FirstQuirk") &&
+                    "plusultra:stockpile".equals(currentQuirkInstance.persistentData.getString("FirstQuirk"))) {
+                showStockpile = true;
+            }
+        }
+
+        if (showStockpile) {
             renderStockpileBar(context, font, height, currentQuirkInstance);
         }
 
@@ -75,13 +86,16 @@ public class QuirkHudOverlay implements HudRenderCallback {
 
         // --- ABILITIES ---
         int currentY = y - 25;
-        List<QuirkSystem.Ability> abilities = realQuirk.getAbilities();
+
+        // UPDATED: Fetch abilities dynamically based on instance (needed for OFA)
+        List<QuirkSystem.Ability> abilities = realQuirk.getAbilities(currentQuirkInstance);
         int selectedSlot = data.getSelectedAbilityIndex();
 
         for (int i = abilities.size() - 1; i >= 0; i--) {
+            if (i >= abilities.size()) continue; // Safety
+
             QuirkSystem.Ability ability = abilities.get(i);
             boolean isSelected = (i == selectedSlot);
-            // UPDATED: Check for strict lock
             boolean isLocked = instanceIsLocked(currentQuirkInstance) || data.level < ability.getRequiredLevel();
             boolean onCooldown = ability.getCurrentCooldown() > 0;
 
@@ -89,33 +103,19 @@ public class QuirkHudOverlay implements HudRenderCallback {
             int textColor;
 
             if (isLocked) {
-                if (instanceIsLocked(currentQuirkInstance)) {
-                    displayText += " (LOCKED)";
-                } else {
-                    displayText += " (Lvl " + ability.getRequiredLevel() + ")";
-                }
+                if (instanceIsLocked(currentQuirkInstance)) displayText += " (LOCKED)";
+                else displayText += " (Lvl " + ability.getRequiredLevel() + ")";
                 textColor = LOCKED_COLOR;
             } else {
-                String suffix = "";
                 if (onCooldown) {
                     float seconds = ability.getCurrentCooldown() / 20.0f;
-                    suffix = String.format(" [%.1fs]", seconds);
-                } else if (ability.getCost() > 0) {
-                    suffix = " [" + (int)ability.getCost() + "]";
-                }
-                displayText += suffix;
-
-                if (onCooldown) {
+                    displayText += String.format(" [%.1fs]", seconds);
                     textColor = LOCKED_COLOR;
-                } else if (isSelected) {
-                    textColor = SELECTED_COLOR;
                 } else {
-                    textColor = PASSIVE_COLOR;
+                    if (ability.getCost() > 0) displayText += " [" + (int)ability.getCost() + "]";
+                    textColor = isSelected ? SELECTED_COLOR : PASSIVE_COLOR;
                 }
-
-                if (isSelected) {
-                    displayText = "> " + displayText + " <";
-                }
+                if (isSelected) displayText = "> " + displayText + " <";
             }
 
             context.drawText(font, displayText, rightEdge - font.getWidth(displayText), currentY, textColor, true);
@@ -124,13 +124,19 @@ public class QuirkHudOverlay implements HudRenderCallback {
 
         int headerY = currentY - 3;
         String quirkDisplayName = realQuirk.getId().getPath().replace("_", " ");
-        StringBuilder sb = new StringBuilder();
-        for (String s : quirkDisplayName.split(" ")) {
-            if (!s.isEmpty()) sb.append(Character.toUpperCase(s.charAt(0))).append(s.substring(1).toLowerCase()).append(" ");
-        }
-        quirkDisplayName = sb.toString().trim();
-        int nameColor = 0xFFFFFF;
 
+        // Rename display if Merged
+        if ("plusultra:one_for_all".equals(currentQuirkInstance.quirkId)) {
+            quirkDisplayName = "One For All";
+        } else {
+            StringBuilder sb = new StringBuilder();
+            for (String s : quirkDisplayName.split(" ")) {
+                if (!s.isEmpty()) sb.append(Character.toUpperCase(s.charAt(0))).append(s.substring(1).toLowerCase()).append(" ");
+            }
+            quirkDisplayName = sb.toString().trim();
+        }
+
+        int nameColor = 0xFFFFFF;
         if (instanceIsLocked(currentQuirkInstance)) {
             quirkDisplayName = "§7[LOCKED] " + quirkDisplayName;
             nameColor = 0xFFAAAAAA;
@@ -141,8 +147,7 @@ public class QuirkHudOverlay implements HudRenderCallback {
 
         context.drawText(font, quirkDisplayName, rightEdge - font.getWidth(quirkDisplayName), headerY, nameColor, true);
 
-        // --- Generation Display for Bestowal (Updated ID) ---
-        if ("plusultra:quirk_bestowal".equals(currentQuirkInstance.quirkId)) {
+        if ("plusultra:one_for_all".equals(currentQuirkInstance.quirkId)) {
             int gen = currentQuirkInstance.persistentData.getInt("Generation");
             if (gen > 0) {
                 String genText = "Generation " + gen;
@@ -170,11 +175,8 @@ public class QuirkHudOverlay implements HudRenderCallback {
 
     private void renderStockpileBar(DrawContext context, TextRenderer font, int screenHeight, QuirkSystem.QuirkData.QuirkInstance instance) {
         float maxPercent = instance.persistentData.getFloat("StockpilePercent");
-        // Get Selected, default to max if not set
         float selectedPercent = instance.persistentData.contains("SelectedPercent") ?
                 instance.persistentData.getFloat("SelectedPercent") : maxPercent;
-
-        // Visual Clamp for rendering (logic handled on server)
         if (selectedPercent > maxPercent) selectedPercent = maxPercent;
 
         int barWidth = 6;
@@ -182,28 +184,19 @@ public class QuirkHudOverlay implements HudRenderCallback {
         int x = 10;
         int y = (screenHeight / 2) - (barHeight / 2);
 
-        // Background (Black)
         context.fill(x, y, x + barWidth, y + barHeight, STOCKPILE_BG);
         context.drawBorder(x, y, barWidth, barHeight, 0xFF555555);
 
-        // Fill Height determines how much white bar to show
-        // We use SELECTED percent for the fill visual to match the action
         int innerHeight = barHeight - 2;
         int fillHeight = (int) ((selectedPercent / 100.0f) * innerHeight);
-
         int fillTopY = (y + barHeight - 1) - fillHeight;
 
-        // Fill (White)
         context.fill(x + 1, fillTopY, x + barWidth - 1, y + barHeight - 1, STOCKPILE_FILL);
-
-        // Centered Percentage Label - Shows SELECTED %
         String percentText = String.format("%.0f%%", selectedPercent);
         int textWidth = font.getWidth(percentText);
         int textX = x + (barWidth / 2) - (textWidth / 2);
-
         context.drawTextWithShadow(font, percentText, textX, y - 10, 0xFFFFFFFF);
 
-        // "PWR" Text below
         int powerWidth = font.getWidth("PWR");
         int powerX = x + (barWidth / 2) - (powerWidth / 2);
         context.drawTextWithShadow(font, "PWR", powerX, y + barHeight + 4, 0xFFFFAA00);

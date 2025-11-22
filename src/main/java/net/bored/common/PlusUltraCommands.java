@@ -75,6 +75,34 @@ public class PlusUltraCommands {
                                 .then(CommandManager.argument("target", EntityArgumentType.player())
                                         .executes(ctx -> getPoints(ctx.getSource(), EntityArgumentType.getPlayer(ctx, "target")))))
                 )
+                // --- LEVEL SUBCOMMANDS ---
+                .then(CommandManager.literal("level")
+                        .then(CommandManager.literal("set")
+                                .then(CommandManager.argument("target", EntityArgumentType.player())
+                                        .then(CommandManager.argument("amount", IntegerArgumentType.integer(1, 100))
+                                                .executes(ctx -> setLevel(ctx.getSource(), EntityArgumentType.getPlayer(ctx, "target"), IntegerArgumentType.getInteger(ctx, "amount"))))))
+                        .then(CommandManager.literal("add")
+                                .then(CommandManager.argument("target", EntityArgumentType.player())
+                                        .then(CommandManager.argument("amount", IntegerArgumentType.integer())
+                                                .executes(ctx -> addLevel(ctx.getSource(), EntityArgumentType.getPlayer(ctx, "target"), IntegerArgumentType.getInteger(ctx, "amount"))))))
+                        .then(CommandManager.literal("get")
+                                .then(CommandManager.argument("target", EntityArgumentType.player())
+                                        .executes(ctx -> getLevel(ctx.getSource(), EntityArgumentType.getPlayer(ctx, "target")))))
+                )
+                // --- XP SUBCOMMANDS ---
+                .then(CommandManager.literal("xp")
+                        .then(CommandManager.literal("set")
+                                .then(CommandManager.argument("target", EntityArgumentType.player())
+                                        .then(CommandManager.argument("amount", IntegerArgumentType.integer(0))
+                                                .executes(ctx -> setXp(ctx.getSource(), EntityArgumentType.getPlayer(ctx, "target"), IntegerArgumentType.getInteger(ctx, "amount"))))))
+                        .then(CommandManager.literal("add")
+                                .then(CommandManager.argument("target", EntityArgumentType.player())
+                                        .then(CommandManager.argument("amount", IntegerArgumentType.integer())
+                                                .executes(ctx -> addXp(ctx.getSource(), EntityArgumentType.getPlayer(ctx, "target"), IntegerArgumentType.getInteger(ctx, "amount"))))))
+                        .then(CommandManager.literal("get")
+                                .then(CommandManager.argument("target", EntityArgumentType.player())
+                                        .executes(ctx -> getXp(ctx.getSource(), EntityArgumentType.getPlayer(ctx, "target")))))
+                )
                 // --- STAT SUBCOMMANDS ---
                 .then(CommandManager.literal("stat")
                         .then(CommandManager.literal("set")
@@ -233,6 +261,57 @@ public class PlusUltraCommands {
     private static int getPoints(ServerCommandSource source, ServerPlayerEntity target) {
         QuirkSystem.QuirkData data = ((IQuirkDataAccessor) target).getQuirkData();
         source.sendFeedback(() -> Text.of(target.getName().getString() + " has " + data.statPoints + " points."), false);
+        return 1;
+    }
+
+    // --- LEVEL LOGIC ---
+    private static int setLevel(ServerCommandSource source, ServerPlayerEntity target, int amount) {
+        QuirkSystem.QuirkData data = ((IQuirkDataAccessor) target).getQuirkData();
+        data.level = amount;
+        // Optionally recalculate stat points if needed based on new level, but manual set is raw.
+        PlusUltraNetwork.sync(target);
+        source.sendFeedback(() -> Text.of("Set Level for " + target.getName().getString() + " to " + amount), true);
+        return 1;
+    }
+
+    private static int addLevel(ServerCommandSource source, ServerPlayerEntity target, int amount) {
+        QuirkSystem.QuirkData data = ((IQuirkDataAccessor) target).getQuirkData();
+        data.level = Math.min(data.level + amount, 100);
+        // Often adding levels adds stat points
+        data.statPoints += amount;
+        PlusUltraNetwork.sync(target);
+        source.sendFeedback(() -> Text.of("Added " + amount + " levels to " + target.getName().getString()), true);
+        return 1;
+    }
+
+    private static int getLevel(ServerCommandSource source, ServerPlayerEntity target) {
+        QuirkSystem.QuirkData data = ((IQuirkDataAccessor) target).getQuirkData();
+        source.sendFeedback(() -> Text.of(target.getName().getString() + " is Level " + data.level), false);
+        return 1;
+    }
+
+    // --- XP LOGIC ---
+    private static int setXp(ServerCommandSource source, ServerPlayerEntity target, int amount) {
+        QuirkSystem.QuirkData data = ((IQuirkDataAccessor) target).getQuirkData();
+        data.experience = amount;
+        // Check if this causes level up? For 'set' usually we just set the value.
+        // To auto-level, use addXp logic.
+        PlusUltraNetwork.sync(target);
+        source.sendFeedback(() -> Text.of("Set XP for " + target.getName().getString() + " to " + amount), true);
+        return 1;
+    }
+
+    private static int addXp(ServerCommandSource source, ServerPlayerEntity target, int amount) {
+        QuirkSystem.QuirkData data = ((IQuirkDataAccessor) target).getQuirkData();
+        data.addXp(amount); // Uses built-in level up logic
+        PlusUltraNetwork.sync(target);
+        source.sendFeedback(() -> Text.of("Added " + amount + " XP to " + target.getName().getString()), true);
+        return 1;
+    }
+
+    private static int getXp(ServerCommandSource source, ServerPlayerEntity target) {
+        QuirkSystem.QuirkData data = ((IQuirkDataAccessor) target).getQuirkData();
+        source.sendFeedback(() -> Text.of(target.getName().getString() + " has " + data.experience + " XP (Max: " + (int)data.getMaxXp() + ")"), false);
         return 1;
     }
 

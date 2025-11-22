@@ -12,6 +12,8 @@ import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.text.Text;
 import net.minecraft.util.Identifier;
 
+import java.util.List;
+
 public class PlusUltraNetwork {
     public static final Identifier ACTIVATE_ABILITY = new Identifier("plusultra", "activate_ability");
     public static final Identifier SWITCH_ABILITY = new Identifier("plusultra", "switch_ability");
@@ -38,10 +40,12 @@ public class PlusUltraNetwork {
 
                 if (quirk != null) {
                     int aIndex = data.getSelectedAbilityIndex();
-                    if (aIndex >= 0 && aIndex < quirk.getAbilities().size()) {
-                        QuirkSystem.Ability ability = quirk.getAbilities().get(aIndex);
+                    // UPDATED: Get abilities dynamically
+                    List<QuirkSystem.Ability> abilities = quirk.getAbilities(instance);
 
-                        // UPDATED: Pass instance to check isLocked
+                    if (aIndex >= 0 && aIndex < abilities.size()) {
+                        QuirkSystem.Ability ability = abilities.get(aIndex);
+
                         if (ability.canUse(data, instance)) {
                             ability.onActivate(player, data, instance);
                             sync(player);
@@ -66,7 +70,8 @@ public class PlusUltraNetwork {
                 QuirkSystem.Quirk quirk = QuirkRegistry.get(new Identifier(instance.quirkId));
 
                 if (quirk != null) {
-                    for(QuirkSystem.Ability ability : quirk.getAbilities()) {
+                    // UPDATED: Get abilities dynamically
+                    for(QuirkSystem.Ability ability : quirk.getAbilities(instance)) {
                         if(ability.getType() == QuirkSystem.AbilityType.TOGGLE) {
                             if (ability.canUse(data, instance)) {
                                 ability.onActivate(player, data, instance);
@@ -91,11 +96,15 @@ public class PlusUltraNetwork {
                 QuirkSystem.Quirk quirk = QuirkRegistry.get(new Identifier(instance.quirkId));
 
                 if (quirk != null) {
-                    data.cycleAbility(direction, quirk.getAbilities().size());
+                    // UPDATED: Get ability count dynamically
+                    int maxAbilities = quirk.getAbilities(instance).size();
+                    data.cycleAbility(direction, maxAbilities);
                     sync(player);
                 }
             });
         });
+
+        // ... (Other receivers like SWITCH_QUIRK, STEAL, UPGRADE remain similar) ...
 
         ServerPlayNetworking.registerGlobalReceiver(SWITCH_QUIRK, (server, player, handler, buf, responseSender) -> {
             int index = buf.readInt();
@@ -109,24 +118,18 @@ public class PlusUltraNetwork {
         ServerPlayNetworking.registerGlobalReceiver(PERFORM_STEAL, (server, player, handler, buf, responseSender) -> {
             int targetId = buf.readInt();
             String quirkToSteal = buf.readString();
-
             server.execute(() -> {
                 Entity entity = player.getWorld().getEntityById(targetId);
                 if (!(entity instanceof LivingEntity target)) return;
-
                 if (player.distanceTo(target) > 10) return;
-
                 QuirkSystem.QuirkData attackerData = ((IQuirkDataAccessor)player).getQuirkData();
                 QuirkSystem.QuirkData targetData = ((IQuirkDataAccessor)target).getQuirkData();
-
                 attackerData.addQuirk(quirkToSteal);
                 boolean fullyRemoved = targetData.removeQuirk(quirkToSteal);
-
                 if (fullyRemoved) {
                     QuirkSystem.Quirk q = QuirkRegistry.get(new Identifier(quirkToSteal));
                     if (q != null) q.onRemove(target, targetData);
                 }
-
                 player.sendMessage(Text.of("§cStole " + quirkToSteal + "!"), true);
                 if (target instanceof ServerPlayerEntity tp) {
                     tp.sendMessage(Text.of("§4Your quirk " + quirkToSteal + " was stolen!"), true);
@@ -139,12 +142,9 @@ public class PlusUltraNetwork {
         ServerPlayNetworking.registerGlobalReceiver(UPGRADE_STAT, (server, player, handler, buf, responseSender) -> {
             int statIndex = buf.readInt();
             int amount = buf.readInt();
-
             server.execute(() -> {
                 QuirkSystem.QuirkData data = ((IQuirkDataAccessor) player).getQuirkData();
-
                 if (amount <= 0 || data.statPoints < amount) return;
-
                 switch (statIndex) {
                     case 0 -> data.strength += amount;
                     case 1 -> data.endurance += amount;
@@ -152,7 +152,6 @@ public class PlusUltraNetwork {
                     case 3 -> data.staminaMax += amount;
                     case 4 -> data.meta += amount;
                 }
-
                 data.statPoints -= amount;
                 sync(player);
             });
@@ -163,20 +162,24 @@ public class PlusUltraNetwork {
             server.execute(() -> {
                 QuirkSystem.QuirkData data = ((IQuirkDataAccessor) player).getQuirkData();
                 if (data.getQuirks().isEmpty()) return;
-
                 QuirkSystem.QuirkData.QuirkInstance instance = data.getQuirks().get(data.getSelectedQuirkIndex());
 
-                if ("plusultra:stockpile".equals(instance.quirkId)) {
+                // UPDATED: Allow adjustment if it IS Stockpile OR fused with Stockpile
+                boolean isStockpile = "plusultra:stockpile".equals(instance.quirkId);
+                if (!isStockpile && instance.persistentData.contains("FirstQuirk")) {
+                    if ("plusultra:stockpile".equals(instance.persistentData.getString("FirstQuirk"))) {
+                        isStockpile = true;
+                    }
+                }
+
+                if (isStockpile) {
                     float maxPercent = instance.persistentData.getFloat("StockpilePercent");
                     float currentSelected = instance.persistentData.contains("SelectedPercent") ?
                             instance.persistentData.getFloat("SelectedPercent") : maxPercent;
-
                     float change = direction * 5.0f;
                     float newSelected = currentSelected + change;
-
                     if (newSelected > maxPercent) newSelected = maxPercent;
                     if (newSelected < 0.0f) newSelected = 0.0f;
-
                     instance.persistentData.putFloat("SelectedPercent", newSelected);
                     sync(player);
                 }

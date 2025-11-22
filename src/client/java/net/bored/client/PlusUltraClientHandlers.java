@@ -55,14 +55,10 @@ public class PlusUltraClientHandlers implements ClientModInitializer {
                 client.setScreen(new StatMenuScreen());
             }
 
-            // NEW: Toggle Destruction (Shift + R)
             if (switchKey.wasPressed()) {
                 if (client.options.sneakKey.isPressed()) {
                     ClientPlayNetworking.send(PlusUltraNetwork.TOGGLE_DESTRUCTION, PacketByteBufs.create());
                 }
-                // Note: If just R is pressed without holding (for scrolling),
-                // it relies on MouseScrollHandler or key checking elsewhere.
-                // Usually single-press R isn't bound to a specific action except holding for scroll wheel.
             }
         });
     }
@@ -174,7 +170,14 @@ public class PlusUltraClientHandlers implements ClientModInitializer {
         }
 
         private List<QuirkSystem.QuirkData.QuirkInstance> getQuirks(QuirkSystem.QuirkData data) {
-            return data.getQuirks();
+            // 3. Hide the past user's quirks in the selection list until they are unlocked.
+            List<QuirkSystem.QuirkData.QuirkInstance> visibleQuirks = new ArrayList<>();
+            for(QuirkSystem.QuirkData.QuirkInstance q : data.getQuirks()) {
+                if(!q.isLocked) {
+                    visibleQuirks.add(q);
+                }
+            }
+            return visibleQuirks;
         }
 
         @Override
@@ -212,7 +215,10 @@ public class PlusUltraClientHandlers implements ClientModInitializer {
                 QuirkSystem.QuirkData.QuirkInstance qi = quirks.get(i);
                 if (currentY + 20 >= listStart && currentY <= listStart + listHeight) {
                     boolean isHovered = (mouseX >= startX + 10 && mouseX <= endX - 10 && mouseY >= currentY && mouseY <= currentY + 20);
-                    boolean isSelected = (i == data.getSelectedQuirkIndex());
+
+                    // Find true index in actual data for selection check
+                    int realIndex = data.getQuirks().indexOf(qi);
+                    boolean isSelected = (realIndex == data.getSelectedQuirkIndex());
 
                     int itemColor = 0xFFFFFF;
                     int backgroundColor = 0x00000000;
@@ -236,7 +242,8 @@ public class PlusUltraClientHandlers implements ClientModInitializer {
                 currentY += 25;
             }
             context.disableScissor();
-            super.render(context, mouseX, mouseY, delta);
+            // Call super to handle buttons if any (none here, but good practice)
+            // super.render(context, mouseX, mouseY, delta);
         }
 
         @Override
@@ -253,22 +260,27 @@ public class PlusUltraClientHandlers implements ClientModInitializer {
 
             if (mouseY < listStart || mouseY > listStart + (windowHeight - 40)) return super.mouseClicked(mouseX, mouseY, button);
             int relativeY = (int)mouseY - listStart + (int)scrollOffset;
-            int index = relativeY / 25;
+            int visualIndex = relativeY / 25;
 
-            if (index >= 0 && index < quirks.size()) {
-                if (button == 0) {
-                    PacketByteBuf buf = PacketByteBufs.create();
-                    buf.writeInt(index);
-                    ClientPlayNetworking.send(PlusUltraNetwork.SWITCH_QUIRK, buf);
-                    client.setScreen(null);
-                    return true;
-                }
-                else if (button == 1) {
-                    PacketByteBuf buf = PacketByteBufs.create();
-                    buf.writeInt(index);
-                    ClientPlayNetworking.send(PlusUltraNetwork.TOGGLE_ABILITY, buf);
-                    client.setScreen(null);
-                    return true;
+            if (visualIndex >= 0 && visualIndex < quirks.size()) {
+                QuirkSystem.QuirkData.QuirkInstance selectedInstance = quirks.get(visualIndex);
+                int realIndex = data.getQuirks().indexOf(selectedInstance);
+
+                if (realIndex != -1) {
+                    if (button == 0) {
+                        PacketByteBuf buf = PacketByteBufs.create();
+                        buf.writeInt(realIndex);
+                        ClientPlayNetworking.send(PlusUltraNetwork.SWITCH_QUIRK, buf);
+                        client.setScreen(null);
+                        return true;
+                    }
+                    else if (button == 1) {
+                        PacketByteBuf buf = PacketByteBufs.create();
+                        buf.writeInt(realIndex);
+                        ClientPlayNetworking.send(PlusUltraNetwork.TOGGLE_ABILITY, buf);
+                        client.setScreen(null);
+                        return true;
+                    }
                 }
             }
             return super.mouseClicked(mouseX, mouseY, button);
@@ -278,8 +290,10 @@ public class PlusUltraClientHandlers implements ClientModInitializer {
         public boolean mouseScrolled(double mouseX, double mouseY, double amount) {
             if (client == null || client.player == null) return false;
             QuirkSystem.QuirkData data = ((IQuirkDataAccessor)client.player).getQuirkData();
-            int totalContentHeight = data.getQuirks().size() * 25;
-            int windowHeight = Math.min((data.getQuirks().size() * 25) + 40, 190);
+            List<QuirkSystem.QuirkData.QuirkInstance> quirks = getQuirks(data);
+
+            int totalContentHeight = quirks.size() * 25;
+            int windowHeight = Math.min((quirks.size() * 25) + 40, 190);
             int visibleHeight = windowHeight - 40;
 
             if (totalContentHeight > visibleHeight) {

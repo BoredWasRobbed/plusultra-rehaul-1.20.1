@@ -39,7 +39,15 @@ public class QuirkSystem {
         public int getIconColor() { return 0xFF00E5FF; }
 
         public void addAbility(Ability ability) { this.abilities.add(ability); }
+
+        // UPDATED: Deprecated the no-arg getter in favor of context-aware one
         public List<Ability> getAbilities() { return abilities; }
+
+        // NEW: Context-aware ability getter for Dynamic Quirks (like OFA)
+        public List<Ability> getAbilities(QuirkData.QuirkInstance instance) {
+            return abilities;
+        }
+
         public Identifier getId() { return id; }
     }
 
@@ -70,8 +78,6 @@ public class QuirkSystem {
 
         public boolean canUse(QuirkData data, QuirkData.QuirkInstance instance) {
             if (instance.isLocked) return false;
-            // Cooldown disabled logic handled in tick resetting it, or explicitly here?
-            // Tick resetting is safer for HUD visuals.
             return data.level >= requiredLevel && isReady() && data.currentStamina >= staminaCost;
         }
 
@@ -92,8 +98,6 @@ public class QuirkSystem {
         public int statPoints = 1;
         public int level = 1, experience = 0;
         public double currentStamina = 100;
-
-        // FIX 3: Cooldown toggle
         public boolean cooldownsDisabled = false;
 
         private final List<QuirkInstance> quirks = new ArrayList<>();
@@ -154,9 +158,10 @@ public class QuirkSystem {
             for (QuirkInstance instance : quirks) {
                 Quirk quirk = QuirkRegistry.get(new Identifier(instance.quirkId));
                 if (quirk != null) {
-                    for (Ability ability : quirk.getAbilities()) {
+                    // UPDATED: Use context-aware getter
+                    List<Ability> instanceAbilities = quirk.getAbilities(instance);
+                    for (Ability ability : instanceAbilities) {
                         ability.tick();
-                        // FIX 3: Force reset if disabled
                         if (this.cooldownsDisabled) {
                             ability.setCurrentCooldown(0);
                         }
@@ -173,7 +178,6 @@ public class QuirkSystem {
 
         public void addXp(int amount) {
             if (level >= 100) return;
-
             this.experience += amount;
             while (this.experience >= getMaxXp() && level < 100) {
                 this.experience -= getMaxXp();
@@ -189,13 +193,10 @@ public class QuirkSystem {
             nbt.putInt("StaminaMax", staminaMax);
             nbt.putInt("Meta", meta);
             nbt.putInt("StatPoints", statPoints);
-
             nbt.putInt("Level", level);
             nbt.putInt("XP", experience);
             nbt.putDouble("StaminaCur", currentStamina);
-
             nbt.putBoolean("CooldownsDisabled", cooldownsDisabled);
-
             nbt.putInt("SelectedQ", selectedQuirkIndex);
             nbt.putInt("SelectedA", selectedAbilityIndex);
 
@@ -212,8 +213,10 @@ public class QuirkSystem {
                 NbtCompound cdTag = new NbtCompound();
                 Quirk q = QuirkRegistry.get(new Identifier(qi.quirkId));
                 if (q != null) {
-                    for(int i=0; i<q.getAbilities().size(); i++) {
-                        cdTag.putInt("A"+i, q.getAbilities().get(i).getCurrentCooldown());
+                    // UPDATED: Save cooldowns based on dynamic list
+                    List<Ability> abilities = q.getAbilities(qi);
+                    for(int i=0; i<abilities.size(); i++) {
+                        cdTag.putInt("A"+i, abilities.get(i).getCurrentCooldown());
                     }
                 }
                 qTag.put("Cooldowns", cdTag);
@@ -229,11 +232,9 @@ public class QuirkSystem {
             if (nbt.contains("StaminaMax")) staminaMax = nbt.getInt("StaminaMax");
             if (nbt.contains("Meta")) meta = nbt.getInt("Meta");
             if (nbt.contains("StatPoints")) statPoints = nbt.getInt("StatPoints");
-
             if (nbt.contains("Level")) level = nbt.getInt("Level");
             if (nbt.contains("XP")) experience = nbt.getInt("XP");
             if (nbt.contains("StaminaCur")) currentStamina = nbt.getDouble("StaminaCur");
-
             if (nbt.contains("CooldownsDisabled")) cooldownsDisabled = nbt.getBoolean("CooldownsDisabled");
 
             selectedQuirkIndex = nbt.getInt("SelectedQ");
@@ -250,15 +251,17 @@ public class QuirkSystem {
                 if (qTag.contains("Data")) qi.persistentData = qTag.getCompound("Data");
                 if (qTag.contains("Locked")) qi.isLocked = qTag.getBoolean("Locked");
                 qi.awakened = qTag.getBoolean("Awakened");
-                quirks.add(qi);
+                quirks.add(qi); // Add to list first so getAbilities works if it needs self-ref
 
                 if (qTag.contains("Cooldowns")) {
                     NbtCompound cdTag = qTag.getCompound("Cooldowns");
                     Quirk q = QuirkRegistry.get(new Identifier(id));
                     if (q != null) {
-                        for(int j=0; j<q.getAbilities().size(); j++) {
+                        // UPDATED: Load cooldowns based on dynamic list
+                        List<Ability> abilities = q.getAbilities(qi);
+                        for(int j=0; j<abilities.size(); j++) {
                             if(cdTag.contains("A"+j)) {
-                                q.getAbilities().get(j).setCurrentCooldown(cdTag.getInt("A"+j));
+                                abilities.get(j).setCurrentCooldown(cdTag.getInt("A"+j));
                             }
                         }
                     }

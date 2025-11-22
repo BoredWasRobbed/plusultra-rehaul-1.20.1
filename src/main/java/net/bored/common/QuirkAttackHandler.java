@@ -57,93 +57,102 @@ public class QuirkAttackHandler {
     }
 
     private static void handleOFATransfer(PlayerEntity attacker, QuirkSystem.QuirkData attackerData, LivingEntity target, QuirkSystem.QuirkData targetData) {
-        // Find Bestowal Quirk on Attacker
-        QuirkSystem.QuirkData.QuirkInstance bestowalInstance = null;
+        QuirkSystem.QuirkData.QuirkInstance activeOFA = null;
+
+        // Find either the Bestowal quirk (Gen 0) OR One For All (Gen 1+)
         for (QuirkSystem.QuirkData.QuirkInstance qi : attackerData.getQuirks()) {
-            if ("plusultra:quirk_bestowal".equals(qi.quirkId)) {
-                bestowalInstance = qi;
+            if ("plusultra:one_for_all".equals(qi.quirkId) || "plusultra:quirk_bestowal".equals(qi.quirkId)) {
+                activeOFA = qi;
                 break;
             }
         }
 
-        if (bestowalInstance == null) {
+        if (activeOFA == null) {
             attacker.sendMessage(Text.of("§cTransfer failed: You lost the quirk?"), true);
             return;
         }
 
-        int currentGen = bestowalInstance.persistentData.getInt("Generation");
-        String firstUserQuirkId = bestowalInstance.persistentData.getString("FirstQuirk");
+        int currentGen = activeOFA.persistentData.getInt("Generation");
 
+        // 1. Stop transferal once it hits the ninth user.
+        if (currentGen >= 9) {
+            attacker.sendMessage(Text.of("§6The power has reached its peak. One For All cannot be transferred further."), true);
+            return;
+        }
+
+        // Identify what the "Core" quirk inside OFA is
+        String firstUserQuirkId = activeOFA.persistentData.getString("FirstQuirk");
         int newGen = currentGen + 1;
 
-        // GEN 1 LOGIC (Origin)
+        // --- FUSION LOGIC (Gen 0 -> Gen 1) ---
         if (currentGen == 0) {
             newGen = 1;
-            // Check if target has a main quirk to fuse
+            // If Target has a quirk, THAT becomes the fused "FirstQuirk"
+            // We merge Bestowal (Attacker) + TargetQuirk (Target) -> One For All (Target)
             if (!targetData.getQuirks().isEmpty()) {
-                firstUserQuirkId = targetData.getQuirks().get(0).quirkId;
+                QuirkSystem.QuirkData.QuirkInstance targetExisting = targetData.getQuirks().get(0);
+                firstUserQuirkId = targetExisting.quirkId;
+
+                // Remove the target's existing quirk because it's being merged into OFA
+                // We do this by clearing target quirks before adding OFA
+                targetData.getQuirks().clear();
+                attacker.sendMessage(Text.of("§eFusing Bestowal with " + getFormalName(firstUserQuirkId) + "..."), false);
+            } else {
+                // Quirkless 1st user scenario (unlikely in lore but possible here)
+                firstUserQuirkId = "";
             }
         }
 
-        // --- PERFORM TRANSFER ---
-        List<QuirkSystem.QuirkData.QuirkInstance> quirksToMove = new ArrayList<>(attackerData.getQuirks());
+        // --- TRANSFER LOGIC ---
+        // Copy all OTHER quirks the attacker has (Past Users)
+        List<QuirkSystem.QuirkData.QuirkInstance> quirksToMove = new ArrayList<>();
+        for(QuirkSystem.QuirkData.QuirkInstance qi : attackerData.getQuirks()) {
+            // Don't copy the old OFA/Bestowal instance directly, we create a NEW one for the target
+            if (!qi.quirkId.equals(activeOFA.quirkId)) {
+                quirksToMove.add(qi);
+            }
+        }
 
         // 1. Clear Attacker
         attackerData.getQuirks().clear();
         attackerData.setSelectedQuirkIndex(0);
 
-        // 2. Add to Target
+        // 2. Create NEW One For All Instance for Target
+        // This handles the ID change: It is ALWAYS "one_for_all" on the target.
+        QuirkSystem.QuirkData.QuirkInstance newOFA = new QuirkSystem.QuirkData.QuirkInstance("plusultra:one_for_all");
+        newOFA.persistentData.putInt("Generation", newGen);
+        if (firstUserQuirkId != null && !firstUserQuirkId.isEmpty()) {
+            newOFA.persistentData.putString("FirstQuirk", firstUserQuirkId);
+        }
+        // Transfer Stockpile Data if it existed
+        if (activeOFA.persistentData.contains("StockpilePercent")) {
+            newOFA.persistentData.putFloat("StockpilePercent", activeOFA.persistentData.getFloat("StockpilePercent"));
+        }
+        newOFA.isLocked = false;
+        targetData.getQuirks().add(newOFA);
+
+        // 3. Add Past User Quirks
         for (QuirkSystem.QuirkData.QuirkInstance qi : quirksToMove) {
-            QuirkSystem.QuirkData.QuirkInstance existing = null;
+            // Clone the instance to prevent reference issues
+            QuirkSystem.QuirkData.QuirkInstance clone = new QuirkSystem.QuirkData.QuirkInstance(qi.quirkId);
+            clone.innate = false;
+            clone.count = qi.count;
+            clone.persistentData = qi.persistentData.copy();
 
-            // Check if target already has this quirk
-            for(QuirkSystem.QuirkData.QuirkInstance tqi : targetData.getQuirks()) {
-                if(tqi.quirkId.equals(qi.quirkId)) {
-                    existing = tqi;
-                    break;
-                }
-            }
+            // Lock inherited quirks until Gen 9
+            clone.isLocked = true;
 
-            if (existing != null) {
-                // STACKING LOGIC: Add counts together
-                existing.count += qi.count;
-
-                // If it's the Bestowal quirk, update generation on the existing instance
-                if ("plusultra:quirk_bestowal".equals(qi.quirkId)) {
-                    existing.persistentData.putInt("Generation", newGen);
-                    existing.persistentData.putString("FirstQuirk", firstUserQuirkId);
-                    existing.isLocked = false;
-                }
-            } else {
-                // New Quirk Addition
-                qi.innate = false; // It was transferred, so not innate (unless fused? but logic simplifies to false for transferred instances)
-
-                // LOCKING LOGIC
-                if ("plusultra:quirk_bestowal".equals(qi.quirkId)) {
-                    qi.isLocked = false;
-                    qi.persistentData.putInt("Generation", newGen);
-                    qi.persistentData.putString("FirstQuirk", firstUserQuirkId);
-                } else if (qi.quirkId.equals(firstUserQuirkId)) {
-                    qi.isLocked = false;
-                } else {
-                    // Lock inherited quirks until Gen 9
-                    qi.isLocked = true;
-                }
-
-                targetData.getQuirks().add(qi);
-            }
+            targetData.getQuirks().add(clone);
         }
 
-        // 3. Notify
-        attacker.sendMessage(Text.of("§eYou have passed on Quirk Bestowal."), true);
+        // 4. Notify & Sync
+        attacker.sendMessage(Text.of("§eYou have passed on the torch."), true);
         if (target instanceof PlayerEntity tp) {
-            tp.sendMessage(Text.of("§bYou have received Quirk Bestowal! (Generation " + newGen + ")"), false);
-            if (newGen < 9) {
-                tp.sendMessage(Text.of("§7Past users' quirks are currently locked."), false);
-            }
+            String mergedName = (firstUserQuirkId != null && !firstUserQuirkId.isEmpty()) ? getFormalName(firstUserQuirkId) : "Power";
+            tp.sendMessage(Text.of("§bYou have received One For All! (Gen " + newGen + ")"), false);
+            if (newGen == 1) tp.sendMessage(Text.of("§7Bestowal has merged with " + mergedName + "."), false);
         }
 
-        // 4. Sync
         if (attacker instanceof ServerPlayerEntity sa) PlusUltraNetwork.sync(sa);
         if (target instanceof ServerPlayerEntity st) PlusUltraNetwork.sync(st);
     }
