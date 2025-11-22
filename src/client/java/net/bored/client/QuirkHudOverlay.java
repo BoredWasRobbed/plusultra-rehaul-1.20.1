@@ -81,14 +81,19 @@ public class QuirkHudOverlay implements HudRenderCallback {
         for (int i = abilities.size() - 1; i >= 0; i--) {
             QuirkSystem.Ability ability = abilities.get(i);
             boolean isSelected = (i == selectedSlot);
-            boolean isLocked = data.level < ability.getRequiredLevel();
+            // UPDATED: Check for strict lock
+            boolean isLocked = instanceIsLocked(currentQuirkInstance) || data.level < ability.getRequiredLevel();
             boolean onCooldown = ability.getCurrentCooldown() > 0;
 
             String displayText = ability.getName();
             int textColor;
 
             if (isLocked) {
-                displayText += " (Lvl " + ability.getRequiredLevel() + ")";
+                if (instanceIsLocked(currentQuirkInstance)) {
+                    displayText += " (LOCKED)";
+                } else {
+                    displayText += " (Lvl " + ability.getRequiredLevel() + ")";
+                }
                 textColor = LOCKED_COLOR;
             } else {
                 String suffix = "";
@@ -125,11 +130,25 @@ public class QuirkHudOverlay implements HudRenderCallback {
         }
         quirkDisplayName = sb.toString().trim();
         int nameColor = 0xFFFFFF;
-        if (currentQuirkInstance.awakened) {
+
+        if (instanceIsLocked(currentQuirkInstance)) {
+            quirkDisplayName = "§7[LOCKED] " + quirkDisplayName;
+            nameColor = 0xFFAAAAAA;
+        } else if (currentQuirkInstance.awakened) {
             quirkDisplayName = "§k||§r " + quirkDisplayName + " §k||";
             nameColor = AWAKENED_STAMINA_COLOR;
         }
+
         context.drawText(font, quirkDisplayName, rightEdge - font.getWidth(quirkDisplayName), headerY, nameColor, true);
+
+        // --- Generation Display for Bestowal (Updated ID) ---
+        if ("plusultra:quirk_bestowal".equals(currentQuirkInstance.quirkId)) {
+            int gen = currentQuirkInstance.persistentData.getInt("Generation");
+            if (gen > 0) {
+                String genText = "Generation " + gen;
+                context.drawText(font, genText, rightEdge - font.getWidth(genText), headerY - 24, 0xFFFFD700, true);
+            }
+        }
 
         int levelY = headerY - 12;
         String lvlText = "Lvl " + data.level;
@@ -143,6 +162,10 @@ public class QuirkHudOverlay implements HudRenderCallback {
         float currentXp = data.experience;
         int xpFill = (int) ((currentXp / maxXp) * xpBarWidth);
         context.fill(xpBarX, levelY + 4, xpBarX + xpFill, levelY + 5, XP_COLOR);
+    }
+
+    private boolean instanceIsLocked(QuirkSystem.QuirkData.QuirkInstance instance) {
+        return instance.isLocked;
     }
 
     private void renderStockpileBar(DrawContext context, TextRenderer font, int screenHeight, QuirkSystem.QuirkData.QuirkInstance instance) {

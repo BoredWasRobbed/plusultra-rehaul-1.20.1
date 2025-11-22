@@ -22,8 +22,6 @@ public class PlusUltraNetwork {
     public static final Identifier TOGGLE_ABILITY = new Identifier("plusultra", "toggle_ability");
     public static final Identifier UPGRADE_STAT = new Identifier("plusultra", "upgrade_stat");
     public static final Identifier ADJUST_PERCENTAGE = new Identifier("plusultra", "adjust_percentage");
-
-    // NEW: Toggle Destruction Packet
     public static final Identifier TOGGLE_DESTRUCTION = new Identifier("plusultra", "toggle_destruction");
 
     public static void registerServerReceivers() {
@@ -42,11 +40,14 @@ public class PlusUltraNetwork {
                     int aIndex = data.getSelectedAbilityIndex();
                     if (aIndex >= 0 && aIndex < quirk.getAbilities().size()) {
                         QuirkSystem.Ability ability = quirk.getAbilities().get(aIndex);
-                        if (ability.canUse(data)) {
+
+                        // UPDATED: Pass instance to check isLocked
+                        if (ability.canUse(data, instance)) {
                             ability.onActivate(player, data, instance);
                             sync(player);
                         } else {
-                            if (data.level < ability.getRequiredLevel()) player.sendMessage(Text.of("§cLevel too low!"), true);
+                            if (instance.isLocked) player.sendMessage(Text.of("§cThis Quirk is currently locked!"), true);
+                            else if (data.level < ability.getRequiredLevel()) player.sendMessage(Text.of("§cLevel too low!"), true);
                             else if (!ability.isReady()) player.sendMessage(Text.of("§cCooldown!"), true);
                             else player.sendMessage(Text.of("§cNot enough Stamina!"), true);
                         }
@@ -67,9 +68,11 @@ public class PlusUltraNetwork {
                 if (quirk != null) {
                     for(QuirkSystem.Ability ability : quirk.getAbilities()) {
                         if(ability.getType() == QuirkSystem.AbilityType.TOGGLE) {
-                            if (ability.canUse(data)) {
+                            if (ability.canUse(data, instance)) {
                                 ability.onActivate(player, data, instance);
                                 sync(player);
+                            } else if (instance.isLocked) {
+                                player.sendMessage(Text.of("§cLocked!"), true);
                             }
                             return;
                         }
@@ -180,7 +183,6 @@ public class PlusUltraNetwork {
             });
         });
 
-        // NEW: Handle Destruction Toggle
         ServerPlayNetworking.registerGlobalReceiver(TOGGLE_DESTRUCTION, (server, player, handler, buf, responseSender) -> {
             server.execute(() -> {
                 QuirkSystem.QuirkData data = ((IQuirkDataAccessor) player).getQuirkData();

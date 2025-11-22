@@ -1,16 +1,19 @@
 package net.bored;
 
+import net.bored.api.IQuirkDataAccessor;
 import net.bored.common.PlusUltraCommands;
 import net.bored.common.PlusUltraNetwork;
 import net.bored.common.QuirkAttackHandler;
 import net.bored.common.QuirkRegistry;
 import net.bored.common.entities.FlickProjectileEntity;
 import net.fabricmc.api.ModInitializer;
+import net.fabricmc.fabric.api.entity.event.v1.ServerPlayerEvents;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents;
 import net.fabricmc.fabric.api.object.builder.v1.entity.FabricEntityTypeBuilder;
 import net.minecraft.entity.EntityDimensions;
 import net.minecraft.entity.EntityType;
 import net.minecraft.entity.SpawnGroup;
+import net.minecraft.nbt.NbtCompound;
 import net.minecraft.registry.Registries;
 import net.minecraft.registry.Registry;
 import net.minecraft.util.Identifier;
@@ -37,6 +40,15 @@ public class PlusUltra implements ModInitializer {
 
 		ServerPlayConnectionEvents.JOIN.register((handler, sender, server) -> {
 			PlusUltraNetwork.sync(handler.player);
+		});
+
+		// FIX 2: Save Quirks on Death
+		ServerPlayerEvents.COPY_FROM.register((oldPlayer, newPlayer, alive) -> {
+			IQuirkDataAccessor oldAccessor = (IQuirkDataAccessor) oldPlayer;
+			IQuirkDataAccessor newAccessor = (IQuirkDataAccessor) newPlayer;
+			NbtCompound nbt = new NbtCompound();
+			oldAccessor.getQuirkData().writeToNbt(nbt);
+			newAccessor.getQuirkData().readFromNbt(nbt);
 		});
 	}
 }

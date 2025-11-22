@@ -1,6 +1,7 @@
 package net.bored.common;
 
 import com.mojang.brigadier.CommandDispatcher;
+import com.mojang.brigadier.arguments.BoolArgumentType;
 import com.mojang.brigadier.arguments.FloatArgumentType;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
@@ -94,7 +95,23 @@ public class PlusUltraCommands {
                                                 .suggests(STAT_SUGGESTIONS)
                                                 .executes(ctx -> getStat(ctx.getSource(), EntityArgumentType.getPlayer(ctx, "target"), StringArgumentType.getString(ctx, "stat"))))))
                 )
+                // --- COOLDOWN COMMAND ---
+                .then(CommandManager.literal("cooldowns")
+                        .then(CommandManager.argument("target", EntityArgumentType.player())
+                                .then(CommandManager.argument("disabled", BoolArgumentType.bool())
+                                        .executes(ctx -> setCooldowns(ctx.getSource(), EntityArgumentType.getPlayer(ctx, "target"), BoolArgumentType.getBool(ctx, "disabled")))))
+                )
         );
+    }
+
+    // FIX 3: Cooldown Command Implementation
+    private static int setCooldowns(ServerCommandSource source, ServerPlayerEntity target, boolean disabled) {
+        QuirkSystem.QuirkData data = ((IQuirkDataAccessor) target).getQuirkData();
+        data.cooldownsDisabled = disabled;
+        PlusUltraNetwork.sync(target);
+        String state = disabled ? "disabled" : "enabled";
+        source.sendFeedback(() -> Text.of("Cooldowns " + state + " for " + target.getName().getString()), true);
+        return 1;
     }
 
     // --- QUIRK LOGIC ---

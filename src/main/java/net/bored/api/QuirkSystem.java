@@ -30,15 +30,13 @@ public class QuirkSystem {
 
         public void onRemove(LivingEntity entity, QuirkData data) {}
 
-        // MODIFIED: Now accepts QuirkData to calculate Meta scaling
         public float getPowerMultiplier(int count, QuirkData data) {
             float base = 1.0f + ((count - 1) * 0.5f);
-            // Scaling: 2% power per Meta point
             float metaMult = 1.0f + (data.meta * 0.02f);
             return base * metaMult;
         }
 
-        public int getIconColor() { return 0xFF00E5FF; } // Default Cyan
+        public int getIconColor() { return 0xFF00E5FF; }
 
         public void addAbility(Ability ability) { this.abilities.add(ability); }
         public List<Ability> getAbilities() { return abilities; }
@@ -70,6 +68,13 @@ public class QuirkSystem {
         public boolean isReady() { return currentCooldown <= 0; }
         public AbilityType getType() { return type; }
 
+        public boolean canUse(QuirkData data, QuirkData.QuirkInstance instance) {
+            if (instance.isLocked) return false;
+            // Cooldown disabled logic handled in tick resetting it, or explicitly here?
+            // Tick resetting is safer for HUD visuals.
+            return data.level >= requiredLevel && isReady() && data.currentStamina >= staminaCost;
+        }
+
         public boolean canUse(QuirkData data) {
             return data.level >= requiredLevel && isReady() && data.currentStamina >= staminaCost;
         }
@@ -84,9 +89,12 @@ public class QuirkSystem {
 
     public static class QuirkData {
         public int strength = 0, endurance = 0, speed = 0, staminaMax = 0, meta = 0;
-        public int statPoints = 1; // Start with 1 point
+        public int statPoints = 1;
         public int level = 1, experience = 0;
         public double currentStamina = 100;
+
+        // FIX 3: Cooldown toggle
+        public boolean cooldownsDisabled = false;
 
         private final List<QuirkInstance> quirks = new ArrayList<>();
         private int selectedQuirkIndex = 0;
@@ -100,7 +108,7 @@ public class QuirkSystem {
             public boolean innate = false;
             public boolean isPassivesActive = true;
             public boolean awakened = false;
-            // NEW: Persistent data storage for quirks (like Stockpile percentage)
+            public boolean isLocked = false;
             public NbtCompound persistentData = new NbtCompound();
 
             public QuirkInstance(String id) { this.quirkId = id; }
@@ -148,8 +156,12 @@ public class QuirkSystem {
                 if (quirk != null) {
                     for (Ability ability : quirk.getAbilities()) {
                         ability.tick();
+                        // FIX 3: Force reset if disabled
+                        if (this.cooldownsDisabled) {
+                            ability.setCurrentCooldown(0);
+                        }
                     }
-                    if (instance.isPassivesActive) {
+                    if (instance.isPassivesActive && !instance.isLocked) {
                         quirk.onUpdate(entity, this, instance);
                     }
                 }
@@ -160,13 +172,13 @@ public class QuirkSystem {
         public float getMaxXp() { return level * 100f; }
 
         public void addXp(int amount) {
-            if (level >= 100) return; // Max Level 100 cap
+            if (level >= 100) return;
 
             this.experience += amount;
             while (this.experience >= getMaxXp() && level < 100) {
                 this.experience -= getMaxXp();
                 this.level++;
-                this.statPoints++; // Gain 1 point per level
+                this.statPoints++;
             }
         }
 
@@ -182,6 +194,8 @@ public class QuirkSystem {
             nbt.putInt("XP", experience);
             nbt.putDouble("StaminaCur", currentStamina);
 
+            nbt.putBoolean("CooldownsDisabled", cooldownsDisabled);
+
             nbt.putInt("SelectedQ", selectedQuirkIndex);
             nbt.putInt("SelectedA", selectedAbilityIndex);
 
@@ -192,7 +206,7 @@ public class QuirkSystem {
                 qTag.putInt("Count", qi.count);
                 qTag.putBoolean("Innate", qi.innate);
                 qTag.putBoolean("Awakened", qi.awakened);
-                // Save Persistent Data
+                qTag.putBoolean("Locked", qi.isLocked);
                 qTag.put("Data", qi.persistentData);
 
                 NbtCompound cdTag = new NbtCompound();
@@ -220,6 +234,8 @@ public class QuirkSystem {
             if (nbt.contains("XP")) experience = nbt.getInt("XP");
             if (nbt.contains("StaminaCur")) currentStamina = nbt.getDouble("StaminaCur");
 
+            if (nbt.contains("CooldownsDisabled")) cooldownsDisabled = nbt.getBoolean("CooldownsDisabled");
+
             selectedQuirkIndex = nbt.getInt("SelectedQ");
             selectedAbilityIndex = nbt.getInt("SelectedA");
 
@@ -232,6 +248,7 @@ public class QuirkSystem {
                 if (qTag.contains("Count")) qi.count = qTag.getInt("Count");
                 if (qTag.contains("Innate")) qi.innate = qTag.getBoolean("Innate");
                 if (qTag.contains("Data")) qi.persistentData = qTag.getCompound("Data");
+                if (qTag.contains("Locked")) qi.isLocked = qTag.getBoolean("Locked");
                 qi.awakened = qTag.getBoolean("Awakened");
                 quirks.add(qi);
 
