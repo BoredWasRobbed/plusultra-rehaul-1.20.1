@@ -18,12 +18,11 @@ import org.lwjgl.glfw.GLFW;
 public class PlusUltraClientHandlers implements ClientModInitializer {
 
     public static KeyBinding activateKey;
-    public static KeyBinding switchKey; // R (Hold)
-    public static KeyBinding menuKey;   // V
+    public static KeyBinding switchKey;
+    public static KeyBinding menuKey;
 
     @Override
     public void onInitializeClient() {
-        // Register Keys
         activateKey = KeyBindingHelper.registerKeyBinding(new KeyBinding(
                 "key.plusultra.activate",
                 InputUtil.Type.KEYSYM,
@@ -45,19 +44,13 @@ public class PlusUltraClientHandlers implements ClientModInitializer {
                 "category.plusultra.main"
         ));
 
-        // Input Handling
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             if (client.player == null) return;
-
-            // Handle Ability Activation (Z)
             if (activateKey.wasPressed()) {
                 ClientPlayNetworking.send(PlusUltraNetwork.ACTIVATE_ABILITY, PacketByteBufs.create());
             }
-
-            // Handle Menu Open (V)
             if (menuKey.wasPressed()) {
                 QuirkSystem.QuirkData data = ((IQuirkDataAccessor)client.player).getQuirkData();
-                // Requirement: Cannot open without 2 or more quirks
                 if (data.getQuirks().size() >= 2) {
                     client.setScreen(new QuirkSelectionScreen());
                 } else {
@@ -67,40 +60,40 @@ public class PlusUltraClientHandlers implements ClientModInitializer {
         });
     }
 
-    // --- GUI IMPLEMENTATION ---
     public static class QuirkSelectionScreen extends Screen {
-        public QuirkSelectionScreen() {
-            super(Text.of("Quirk Selection"));
-        }
+        public QuirkSelectionScreen() { super(Text.of("Quirk Selection")); }
 
         @Override
         public void render(DrawContext context, int mouseX, int mouseY, float delta) {
             this.renderBackground(context);
             context.drawCenteredTextWithShadow(textRenderer, "Quirk Switcher", width / 2, 20, 0xFFFFFF);
-
-            // Access Player Data
             if (client == null || client.player == null) return;
             QuirkSystem.QuirkData data = ((IQuirkDataAccessor)client.player).getQuirkData();
 
             int y = 50;
             for (int i = 0; i < data.getQuirks().size(); i++) {
                 QuirkSystem.QuirkData.QuirkInstance qi = data.getQuirks().get(i);
-                String name = qi.quirkId;
-
-                // Highlight selected
                 int color = (i == data.getSelectedQuirkIndex()) ? 0x00FF00 : 0xAAAAAA;
-                context.drawText(textRenderer, name, width / 2 - 50, y, color, true);
-
+                context.drawText(textRenderer, qi.quirkId, width / 2 - 50, y, color, true);
                 y += 20;
             }
-
             super.render(context, mouseX, mouseY, delta);
         }
 
         @Override
         public boolean mouseClicked(double mouseX, double mouseY, int button) {
             if (client != null && client.player != null) {
-                // Add logic here
+                QuirkSystem.QuirkData data = ((IQuirkDataAccessor)client.player).getQuirkData();
+                int y = 50;
+                for (int i = 0; i < data.getQuirks().size(); i++) {
+                    if (mouseY >= y && mouseY <= y + 10) {
+                        PacketByteBufs.create().writeInt(i);
+                        ClientPlayNetworking.send(PlusUltraNetwork.SWITCH_QUIRK, PacketByteBufs.create().writeVarInt(i)); // Logic placeholder
+                        client.setScreen(null);
+                        return true;
+                    }
+                    y += 20;
+                }
             }
             return super.mouseClicked(mouseX, mouseY, button);
         }

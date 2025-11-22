@@ -29,8 +29,6 @@ public abstract class LivingEntityQuirkMixin extends Entity implements IQuirkDat
 
     @Inject(method = "tick", at = @At("TAIL"))
     public void tickQuirk(CallbackInfo ci) {
-        if (!this.getWorld().isClient) {
-            quirkData.tick((LivingEntity)(Object)this);
-        }
+        quirkData.tick((LivingEntity)(Object)this);
     }
 }

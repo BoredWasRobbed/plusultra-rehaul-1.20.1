@@ -15,7 +15,6 @@ public class PlusUltra implements ModInitializer {
 		QuirkRegistry.registerAll();
 		PlusUltraCommands.register();
 
-		// EVENT: Sync Data when player joins server
 		ServerPlayConnectionEvents.JOIN.register((handler, sender, server) -> {
 			PlusUltraNetwork.sync(handler.player);
 		});

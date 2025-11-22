@@ -15,7 +15,6 @@ public class PlusUltraClient implements ClientModInitializer {
 		new PlusUltraClientHandlers().onInitializeClient();
 		HudRenderCallback.EVENT.register(new QuirkHudOverlay());
 
-		// CLIENT RECEIVER: Update data when server sends Sync Packet
 		ClientPlayNetworking.registerGlobalReceiver(PlusUltraNetwork.SYNC_DATA, (client, handler, buf, responseSender) -> {
 			NbtCompound nbt = buf.readNbt();
 			client.execute(() -> {

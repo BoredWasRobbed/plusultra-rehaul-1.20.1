@@ -40,9 +40,7 @@ public class PlusUltraCommands {
         data.getQuirks().add(new QuirkSystem.QuirkData.QuirkInstance(quirkId.toString()));
         data.setSelectedQuirkIndex(0);
 
-        // CRITICAL: Sync to Client so HUD updates
         PlusUltraNetwork.sync(target);
-
         source.sendFeedback(() -> Text.of("Quirk Set!"), true);
         return 1;
     }
