@@ -10,7 +10,6 @@ import java.io.FileReader;
 import java.io.FileWriter;
 import java.io.IOException;
 import java.io.PrintWriter;
-import java.util.HashMap;
 import java.util.Map;
 import java.util.TreeMap;
 
@@ -22,6 +21,11 @@ public class PlusUltraConfig {
     // --- Config Options ---
     public boolean disableQuirkDestruction = true;
     public boolean limitUniqueQuirks = true;
+
+    // --- Mob Spawn Options ---
+    public boolean mobsCanSpawnWithQuirks = true;
+    public double mobQuirkChance = 0.05; // 5% chance by default
+
     // Using TreeMap to keep quirks sorted alphabetically in the file
     public Map<String, Boolean> enabledQuirks = new TreeMap<>();
 
@@ -62,6 +66,14 @@ public class PlusUltraConfig {
                             INSTANCE.disableQuirkDestruction = Boolean.parseBoolean(value);
                         } else if (key.equals("limitUniqueQuirks")) {
                             INSTANCE.limitUniqueQuirks = Boolean.parseBoolean(value);
+                        } else if (key.equals("mobsCanSpawnWithQuirks")) {
+                            INSTANCE.mobsCanSpawnWithQuirks = Boolean.parseBoolean(value);
+                        } else if (key.equals("mobQuirkChance")) {
+                            try {
+                                INSTANCE.mobQuirkChance = Double.parseDouble(value);
+                            } catch (NumberFormatException e) {
+                                INSTANCE.mobQuirkChance = 0.05;
+                            }
                         } else {
                             // Assume it's a quirk
                             INSTANCE.enabledQuirks.put(key, Boolean.parseBoolean(value));
@@ -107,6 +119,14 @@ public class PlusUltraConfig {
             writer.println("");
             writer.println("# If true, One For All and All For One can only be held by one player per world.");
             writer.println("limitUniqueQuirks = " + INSTANCE.limitUniqueQuirks);
+            writer.println("");
+
+            writer.println("[Mob Spawning]");
+            writer.println("# If true, mobs can naturally spawn with quirks.");
+            writer.println("mobsCanSpawnWithQuirks = " + INSTANCE.mobsCanSpawnWithQuirks);
+            writer.println("");
+            writer.println("# The chance (0.0 to 1.0) for a mob to spawn with a quirk. 0.05 = 5%.");
+            writer.println("mobQuirkChance = " + INSTANCE.mobQuirkChance);
             writer.println("");
 
             writer.println("[Quirks]");

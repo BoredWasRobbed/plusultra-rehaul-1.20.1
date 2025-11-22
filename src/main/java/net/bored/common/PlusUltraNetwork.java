@@ -4,6 +4,7 @@ import net.bored.api.IQuirkDataAccessor;
 import net.bored.api.QuirkSystem;
 import net.fabricmc.fabric.api.networking.v1.PacketByteBufs;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
+import net.fabricmc.fabric.api.networking.v1.PlayerLookup;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.LivingEntity;
 import net.minecraft.nbt.NbtCompound;
@@ -40,7 +41,6 @@ public class PlusUltraNetwork {
 
                 if (quirk != null) {
                     int aIndex = data.getSelectedAbilityIndex();
-                    // UPDATED: Get abilities dynamically
                     List<QuirkSystem.Ability> abilities = quirk.getAbilities(instance);
 
                     if (aIndex >= 0 && aIndex < abilities.size()) {
@@ -70,7 +70,6 @@ public class PlusUltraNetwork {
                 QuirkSystem.Quirk quirk = QuirkRegistry.get(new Identifier(instance.quirkId));
 
                 if (quirk != null) {
-                    // UPDATED: Get abilities dynamically
                     for(QuirkSystem.Ability ability : quirk.getAbilities(instance)) {
                         if(ability.getType() == QuirkSystem.AbilityType.TOGGLE) {
                             if (ability.canUse(data, instance)) {
@@ -96,15 +95,12 @@ public class PlusUltraNetwork {
                 QuirkSystem.Quirk quirk = QuirkRegistry.get(new Identifier(instance.quirkId));
 
                 if (quirk != null) {
-                    // UPDATED: Get ability count dynamically
                     int maxAbilities = quirk.getAbilities(instance).size();
                     data.cycleAbility(direction, maxAbilities);
                     sync(player);
                 }
             });
         });
-
-        // ... (Other receivers like SWITCH_QUIRK, STEAL, UPGRADE remain similar) ...
 
         ServerPlayNetworking.registerGlobalReceiver(SWITCH_QUIRK, (server, player, handler, buf, responseSender) -> {
             int index = buf.readInt();
@@ -136,6 +132,7 @@ public class PlusUltraNetwork {
                     sync(tp);
                 }
                 sync(player);
+                sync(target); // Sync target changes to clients
             });
         });
 
@@ -164,7 +161,6 @@ public class PlusUltraNetwork {
                 if (data.getQuirks().isEmpty()) return;
                 QuirkSystem.QuirkData.QuirkInstance instance = data.getQuirks().get(data.getSelectedQuirkIndex());
 
-                // UPDATED: Allow adjustment if it IS Stockpile OR fused with Stockpile
                 boolean isStockpile = "plusultra:stockpile".equals(instance.quirkId);
                 if (!isStockpile && instance.persistentData.contains("FirstQuirk")) {
                     if ("plusultra:stockpile".equals(instance.persistentData.getString("FirstQuirk"))) {
@@ -200,12 +196,36 @@ public class PlusUltraNetwork {
         });
     }
 
-    public static void sync(ServerPlayerEntity player) {
-        QuirkSystem.QuirkData data = ((IQuirkDataAccessor)player).getQuirkData();
+    public static void sync(LivingEntity entity) {
+        if (entity.getWorld().isClient) return;
+
+        QuirkSystem.QuirkData data = ((IQuirkDataAccessor)entity).getQuirkData();
         PacketByteBuf buf = PacketByteBufs.create();
+        buf.writeInt(entity.getId());
         NbtCompound nbt = new NbtCompound();
         data.writeToNbt(nbt);
         buf.writeNbt(nbt);
-        ServerPlayNetworking.send(player, SYNC_DATA, buf);
+
+        for (ServerPlayerEntity player : PlayerLookup.tracking(entity)) {
+            ServerPlayNetworking.send(player, SYNC_DATA, buf);
+        }
+
+        if (entity instanceof ServerPlayerEntity self) {
+            ServerPlayNetworking.send(self, SYNC_DATA, buf);
+        }
+    }
+
+    // NEW: Sends entity data to a SPECIFIC player (used when they start tracking)
+    public static void syncToPlayer(LivingEntity entity, ServerPlayerEntity target) {
+        if (entity.getWorld().isClient) return;
+
+        QuirkSystem.QuirkData data = ((IQuirkDataAccessor)entity).getQuirkData();
+        PacketByteBuf buf = PacketByteBufs.create();
+        buf.writeInt(entity.getId());
+        NbtCompound nbt = new NbtCompound();
+        data.writeToNbt(nbt);
+        buf.writeNbt(nbt);
+
+        ServerPlayNetworking.send(target, SYNC_DATA, buf);
     }
 }

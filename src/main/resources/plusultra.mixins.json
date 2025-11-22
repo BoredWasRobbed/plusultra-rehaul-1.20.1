@@ -3,7 +3,8 @@
 	"package": "net.bored.mixin",
 	"compatibilityLevel": "JAVA_17",
 	"mixins": [
-		"LivingEntityQuirkMixin"
+		"LivingEntityQuirkMixin",
+		"MobEntityMixin"
 	],
 	"injectors": {
 		"defaultRequire": 1

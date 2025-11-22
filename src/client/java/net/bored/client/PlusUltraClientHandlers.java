@@ -29,6 +29,8 @@ public class PlusUltraClientHandlers implements ClientModInitializer {
     public static KeyBinding statsKey;
     public static KeyBinding specialKey;
 
+    public static boolean afoSightActive = false; // New Toggle State
+
     @Override
     public void onInitializeClient() {
         activateKey = KeyBindingHelper.registerKeyBinding(new KeyBinding("key.plusultra.activate", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_Z, "category.plusultra.main"));
@@ -58,6 +60,25 @@ public class PlusUltraClientHandlers implements ClientModInitializer {
             if (switchKey.wasPressed()) {
                 if (client.options.sneakKey.isPressed()) {
                     ClientPlayNetworking.send(PlusUltraNetwork.TOGGLE_DESTRUCTION, PacketByteBufs.create());
+                }
+            }
+
+            // NEW: AFO Sight Toggle
+            if (specialKey.wasPressed()) {
+                QuirkSystem.QuirkData data = ((IQuirkDataAccessor)client.player).getQuirkData();
+                // Check if they have AFO
+                boolean hasAFO = false;
+                for(QuirkSystem.QuirkData.QuirkInstance qi : data.getQuirks()) {
+                    if ("plusultra:all_for_one".equals(qi.quirkId)) {
+                        hasAFO = true;
+                        break;
+                    }
+                }
+
+                if (hasAFO) {
+                    afoSightActive = !afoSightActive;
+                    String status = afoSightActive ? "§aEnabled" : "§cDisabled";
+                    client.player.sendMessage(Text.of("§5[All For One] §7Quirk Sight: " + status), true);
                 }
             }
         });
@@ -242,8 +263,6 @@ public class PlusUltraClientHandlers implements ClientModInitializer {
                 currentY += 25;
             }
             context.disableScissor();
-            // Call super to handle buttons if any (none here, but good practice)
-            // super.render(context, mouseX, mouseY, delta);
         }
 
         @Override

@@ -11,10 +11,12 @@ import net.bored.common.entities.FlickProjectileEntity;
 import net.bored.config.PlusUltraConfig;
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.entity.event.v1.ServerPlayerEvents;
+import net.fabricmc.fabric.api.networking.v1.EntityTrackingEvents; // NEW
 import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents;
 import net.fabricmc.fabric.api.object.builder.v1.entity.FabricEntityTypeBuilder;
 import net.minecraft.entity.EntityDimensions;
 import net.minecraft.entity.EntityType;
+import net.minecraft.entity.LivingEntity;
 import net.minecraft.entity.SpawnGroup;
 import net.minecraft.nbt.NbtCompound;
 import net.minecraft.registry.Registries;
@@ -42,20 +44,16 @@ public class PlusUltra implements ModInitializer {
 
 	@Override
 	public void onInitialize() {
-		// 1. Load Config (reads existing file or creates defaults)
 		PlusUltraConfig.load();
 
-		// 2. Register all Java quirks
 		PlusUltraNetwork.registerServerReceivers();
 		QuirkRegistry.registerAll();
-
-		// 3. Populate Config with any new Quirks found in Registry
-		// This ensures the config file is always up to date with the code
 		PlusUltraConfig.get().populateQuirkDefaults();
 
 		PlusUltraCommands.register();
 		QuirkAttackHandler.register();
 
+		// Player Join Sync
 		ServerPlayConnectionEvents.JOIN.register((handler, sender, server) -> {
 			ServerPlayerEntity player = handler.player;
 			IQuirkDataAccessor accessor = (IQuirkDataAccessor) player;
@@ -77,13 +75,19 @@ public class PlusUltra implements ModInitializer {
 			oldAccessor.getQuirkData().writeToNbt(nbt);
 			newAccessor.getQuirkData().readFromNbt(nbt);
 		});
+
+		// NEW: When a player starts seeing a mob (tracking), send that mob's data to the player.
+		EntityTrackingEvents.START_TRACKING.register((trackedEntity, player) -> {
+			if (trackedEntity instanceof LivingEntity living) {
+				PlusUltraNetwork.syncToPlayer(living, player);
+			}
+		});
 	}
 
 	private void assignRandomQuirk(ServerPlayerEntity player, QuirkSystem.QuirkData data) {
 		List<Identifier> validQuirks = new ArrayList<>();
 		PlusUltraConfig config = PlusUltraConfig.get();
 
-		// The loop here is already dynamic! It uses the Registry.
 		for (Identifier id : QuirkRegistry.getKeys()) {
 			String idStr = id.toString();
 
