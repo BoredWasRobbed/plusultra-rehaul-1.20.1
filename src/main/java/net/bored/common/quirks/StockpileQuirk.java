@@ -55,9 +55,7 @@ public class StockpileQuirk extends QuirkSystem.Quirk {
                     // DESTRUCTION LOGIC
                     if (selectedStock >= 75.0f && !data.runtimeTags.containsKey("DESTRUCTION_DISABLED")) {
                         BlockPos destCenter = new BlockPos((int)(entity.getX() + (rotation.x * 4.0)), (int)(entity.getY() + (rotation.y * 4.0)), (int)(entity.getZ() + (rotation.z * 4.0)));
-                        // Scale radius: 3 base + up to 2 extra at 100%
                         int radius = 3 + (int)((selectedStock - 75) / 12.5);
-                        // Pass selectedStock to influence breaking power
                         createDestruction(world, destCenter, radius, entity, selectedStock);
                     }
 
@@ -85,7 +83,6 @@ public class StockpileQuirk extends QuirkSystem.Quirk {
                         world.spawnParticles(ParticleTypes.EXPLOSION, impactX, impactY, impactZ, 5 + (particleCount/5), 1.0, 1.0, 1.0, 0.1);
                         world.spawnParticles(ParticleTypes.CRIT, impactX, impactY, impactZ, 20 + particleCount, 1.5, 1.5, 1.5, 0.5);
                     } else {
-                        // Massive VFX
                         world.spawnParticles(ParticleTypes.EXPLOSION_EMITTER, impactX, impactY, impactZ, 2 + (particleCount/20), 2.0, 2.0, 2.0, 0.0);
                         world.spawnParticles(ParticleTypes.SONIC_BOOM, impactX, impactY, impactZ, 1, 0, 0, 0, 0);
                         world.spawnParticles(ParticleTypes.ELECTRIC_SPARK, impactX, impactY, impactZ, 50 + particleCount, 3.0, 3.0, 3.0, 0.5);
@@ -94,7 +91,7 @@ public class StockpileQuirk extends QuirkSystem.Quirk {
                     }
                 }
 
-                double radius = 2.5 + (selectedStock / 50.0); // Hitbox scales slightly too
+                double radius = 2.5 + (selectedStock / 50.0);
                 Box damageBox = new Box(
                         impactX - radius, impactY - radius, impactZ - radius,
                         impactX + radius, impactY + radius, impactZ + radius
@@ -147,7 +144,6 @@ public class StockpileQuirk extends QuirkSystem.Quirk {
                 if (entity.getWorld() instanceof ServerWorld world) {
                     world.playSound(null, entity.getX(), entity.getY(), entity.getZ(),
                             SoundEvents.ENTITY_GENERIC_EXPLODE, SoundCategory.PLAYERS, 0.5f + (selectedStock / 100f), 2.0f - (selectedStock / 100f));
-                    // More particles for leap
                     int count = 10 + (int)(selectedStock / 2);
                     world.spawnParticles(ParticleTypes.CLOUD, entity.getX(), entity.getY(), entity.getZ(), count, 0.5, 0.1, 0.5, 0.1);
                     if (selectedStock > 50) {
@@ -269,36 +265,41 @@ public class StockpileQuirk extends QuirkSystem.Quirk {
         instance.persistentData.putLong("LastStockpileTime", currentTime);
     }
 
-    // Updated to use hardness scaling
+    // FIX: Rough Sphere Destruction
     private void createDestruction(World world, BlockPos center, int radius, LivingEntity entity, float power) {
         if (radius > 0 && world.getGameRules().getBoolean(GameRules.DO_MOB_GRIEFING)) {
             for (int x = -radius; x <= radius; x++) {
                 for (int y = -radius; y <= radius; y++) {
                     for (int z = -radius; z <= radius; z++) {
-                        if (x*x + y*y + z*z <= radius*radius) {
+
+                        double distance = Math.sqrt(x*x + y*y + z*z);
+
+                        // Noise Factor: 0.0 to 2.0
+                        // Makes the edges imperfect and jagged
+                        double noise = world.random.nextDouble() * 2.0;
+
+                        if (distance <= (radius - noise)) {
                             BlockPos p = center.add(x, y, z);
                             if (!world.isAir(p)) {
                                 BlockState state = world.getBlockState(p);
                                 float hardness = state.getHardness(world, p);
 
                                 if (hardness >= 0) {
-                                    // Logic:
-                                    // High Power + Low Hardness = High Chance
-                                    // Low Power + High Hardness = Low Chance
-                                    // Base chance is proportional to (Power / Hardness)
+                                    float breakChance = 0.0f;
 
-                                    float breakChance = 1.0f;
-                                    if (hardness > 0) {
-                                        // e.g., Power 100 vs Hardness 1.5 (Stone) -> 100/15 = 6.6 -> 100%
-                                        // e.g., Power 50 vs Hardness 50 (Obsidian) -> 50/500 = 0.1 -> 10%
-                                        breakChance = (power / (hardness * 10.0f));
+                                    if (power >= hardness * 2.0f) {
+                                        if (hardness > 0) {
+                                            breakChance = (power / (hardness * 10.0f));
+                                        } else {
+                                            breakChance = 1.0f;
+                                        }
                                     }
 
-                                    // Always break very soft blocks (dirt, grass) if close enough
                                     if (hardness < 0.5f) breakChance = 1.0f;
 
                                     if (world.random.nextFloat() < breakChance) {
-                                        world.breakBlock(p, true, entity);
+                                        boolean shouldDrop = world.random.nextFloat() < 0.3f;
+                                        world.breakBlock(p, shouldDrop, entity);
                                     }
                                 }
                             }
@@ -316,7 +317,6 @@ public class StockpileQuirk extends QuirkSystem.Quirk {
             int radius = (int) (fallHeight / 5.0);
             if (radius > 6) radius = 6;
 
-            // Calculate an equivalent 'power' based on fall height for the destruction calc
             float impactPower = (float)fallHeight * 2.0f;
             if (impactPower > 100f) impactPower = 100f;
 

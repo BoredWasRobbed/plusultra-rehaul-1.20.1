@@ -7,6 +7,9 @@ import net.minecraft.block.BlockState;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.EntityType;
 import net.minecraft.entity.LivingEntity;
+import net.minecraft.entity.data.DataTracker;
+import net.minecraft.entity.data.TrackedData;
+import net.minecraft.entity.data.TrackedDataHandlerRegistry;
 import net.minecraft.entity.projectile.PersistentProjectileEntity;
 import net.minecraft.item.ItemStack;
 import net.minecraft.network.listener.ClientPlayPacketListener;
@@ -24,7 +27,8 @@ import net.minecraft.world.World;
 
 public class FlickProjectileEntity extends PersistentProjectileEntity {
 
-    private float powerPercent = 0f;
+    // FIX 1: Use TrackedData so the Client knows the power level for VFX
+    private static final TrackedData<Float> POWER = DataTracker.registerData(FlickProjectileEntity.class, TrackedDataHandlerRegistry.FLOAT);
     private float damage = 0f;
 
     public FlickProjectileEntity(EntityType<? extends PersistentProjectileEntity> entityType, World world) {
@@ -33,10 +37,16 @@ public class FlickProjectileEntity extends PersistentProjectileEntity {
 
     public FlickProjectileEntity(World world, LivingEntity owner, float power, float dmg) {
         super(PlusUltra.FLICK_PROJECTILE, owner, world);
-        this.powerPercent = power;
+        this.dataTracker.set(POWER, power); // Sync power
         this.damage = dmg;
         this.setNoGravity(true);
         this.setDamage(dmg);
+    }
+
+    @Override
+    protected void initDataTracker() {
+        super.initDataTracker();
+        this.dataTracker.startTracking(POWER, 0f);
     }
 
     @Override
@@ -47,31 +57,50 @@ public class FlickProjectileEntity extends PersistentProjectileEntity {
     @Override
     public void tick() {
         super.tick();
+
+        // Get synced power
+        float powerPercent = this.dataTracker.get(POWER);
+
         if (this.getWorld().isClient) {
-            // SCALING PARTICLES
+            // --- INCREASED VFX ---
             int cloudCount = 2;
             if (powerPercent > 30) cloudCount = 5;
-            if (powerPercent > 70) cloudCount = 12;
+            if (powerPercent > 70) cloudCount = 10;
 
+            // Main Wind Trail (Cloud + White Smoke)
             for(int i=0; i<cloudCount; i++) {
                 this.getWorld().addParticle(ParticleTypes.CLOUD,
-                        this.getX() + (this.random.nextDouble() - 0.5) * 0.3,
-                        this.getY() + (this.random.nextDouble() - 0.5) * 0.3,
-                        this.getZ() + (this.random.nextDouble() - 0.5) * 0.3,
-                        0, 0, 0);
-            }
-
-            if (powerPercent >= 50) {
-                this.getWorld().addParticle(ParticleTypes.CRIT, this.getX(), this.getY(), this.getZ(), 0, 0, 0);
-                this.getWorld().addParticle(ParticleTypes.SMOKE, this.getX(), this.getY(), this.getZ(), 0, 0, 0);
-            }
-
-            if (powerPercent > 80) {
-                this.getWorld().addParticle(ParticleTypes.ELECTRIC_SPARK,
                         this.getX() + (this.random.nextDouble() - 0.5) * 0.5,
                         this.getY() + (this.random.nextDouble() - 0.5) * 0.5,
                         this.getZ() + (this.random.nextDouble() - 0.5) * 0.5,
                         0, 0, 0);
+            }
+
+            // High Power effects
+            if (powerPercent >= 50) {
+                // Sweep Attack particles for "cutting" air look
+                if (this.age % 2 == 0) {
+                    this.getWorld().addParticle(ParticleTypes.SWEEP_ATTACK, this.getX(), this.getY(), this.getZ(), 0, 0, 0);
+                }
+                // Flash occasionally
+                if (this.random.nextFloat() < 0.1f) {
+                    this.getWorld().addParticle(ParticleTypes.FLASH, this.getX(), this.getY(), this.getZ(), 0, 0, 0);
+                }
+            }
+
+            if (powerPercent > 80) {
+                // Intense Sparks / Magic
+                for (int i = 0; i < 3; i++) {
+                    this.getWorld().addParticle(ParticleTypes.ELECTRIC_SPARK,
+                            this.getX() + (this.random.nextDouble() - 0.5),
+                            this.getY() + (this.random.nextDouble() - 0.5),
+                            this.getZ() + (this.random.nextDouble() - 0.5),
+                            0, 0, 0);
+                }
+                // Sonic Boom Ring every few ticks
+                if (this.age % 4 == 0) {
+                    this.getWorld().addParticle(ParticleTypes.SONIC_BOOM, this.getX(), this.getY(), this.getZ(), 0, 0, 0);
+                }
             }
         } else {
             if (powerPercent >= 50) {
@@ -86,7 +115,6 @@ public class FlickProjectileEntity extends PersistentProjectileEntity {
                 }
 
                 if (destructionEnabled && this.age % 2 == 0) {
-                    // Radius scales: 2 at 50%, 3 at 80%+
                     int rad = (powerPercent > 80) ? 3 : 2;
                     createDestruction((ServerWorld) this.getWorld(), this.getBlockPos(), rad);
                 }
@@ -102,15 +130,14 @@ public class FlickProjectileEntity extends PersistentProjectileEntity {
     protected void onEntityHit(EntityHitResult entityHitResult) {
         super.onEntityHit(entityHitResult);
         if (!this.getWorld().isClient) {
+            float powerPercent = this.dataTracker.get(POWER);
             Entity target = entityHitResult.getEntity();
             target.damage(this.getDamageSources().mobProjectile(this, (LivingEntity)this.getOwner()), (float)this.getDamage());
 
             double knockback = 0.5 + (powerPercent / 50.0);
             target.addVelocity(this.getVelocity().x * knockback, 0.2, this.getVelocity().z * knockback);
 
-            // IMPACT SOUNDS
             float volume = 1.0f + (powerPercent / 50.0f);
-
             this.getWorld().playSound(null, this.getX(), this.getY(), this.getZ(),
                     SoundEvents.ENTITY_ZOMBIE_ATTACK_IRON_DOOR, SoundCategory.NEUTRAL, volume, 2.0f);
 
@@ -132,6 +159,7 @@ public class FlickProjectileEntity extends PersistentProjectileEntity {
     protected void onBlockHit(BlockHitResult blockHitResult) {
         super.onBlockHit(blockHitResult);
         if (!this.getWorld().isClient) {
+            float powerPercent = this.dataTracker.get(POWER);
             float volume = 1.0f + (powerPercent / 50.0f);
 
             this.getWorld().playSound(null, this.getX(), this.getY(), this.getZ(),
@@ -148,25 +176,42 @@ public class FlickProjectileEntity extends PersistentProjectileEntity {
 
     private void createDestruction(ServerWorld world, BlockPos center, int radius) {
         if (world.getGameRules().getBoolean(GameRules.DO_MOB_GRIEFING)) {
+            float powerPercent = this.dataTracker.get(POWER);
+
+            // FIX 2: Jagged/Rough Sphere Logic
+            // We iterate a slightly larger box to allow for noise variance
             for (int x = -radius; x <= radius; x++) {
                 for (int y = -radius; y <= radius; y++) {
                     for (int z = -radius; z <= radius; z++) {
-                        if (x*x + y*y + z*z <= radius*radius) {
+
+                        double distance = Math.sqrt(x*x + y*y + z*z);
+
+                        // Noise factor: Subtract a random amount between 0.0 and 1.5 from the radius check
+                        // effectively making the edge "fuzzy"
+                        double noise = world.random.nextDouble() * 1.5;
+
+                        if (distance <= (radius - noise)) {
                             BlockPos p = center.add(x, y, z);
                             if (!world.isAir(p)) {
                                 BlockState state = world.getBlockState(p);
                                 float hardness = state.getHardness(world, p);
 
                                 if (hardness >= 0) {
-                                    float breakChance = 1.0f;
-                                    if (hardness > 0) {
-                                        // Use stored powerPercent for calculation
-                                        breakChance = (this.powerPercent / (hardness * 15.0f));
+                                    float breakChance = 0.0f;
+
+                                    // Hardness Threshold Logic
+                                    if (powerPercent >= hardness * 2.0f) {
+                                        if (hardness > 0) {
+                                            breakChance = (powerPercent / (hardness * 10.0f));
+                                        } else {
+                                            breakChance = 1.0f;
+                                        }
                                     }
                                     if (hardness < 0.5f) breakChance = 1.0f;
 
                                     if (world.random.nextFloat() < breakChance) {
-                                        world.breakBlock(p, true, this.getOwner());
+                                        boolean shouldDrop = world.random.nextFloat() < 0.3f;
+                                        world.breakBlock(p, shouldDrop, this.getOwner());
                                     }
                                 }
                             }
