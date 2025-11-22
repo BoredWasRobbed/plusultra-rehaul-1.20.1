@@ -106,6 +106,9 @@ public class QuirkSystem {
         public int aiActionCooldown = 0;
         public Map<String, String> runtimeTags = new HashMap<>();
 
+        // FIX: Added persistentData field to track player-level data (like First Join status)
+        public NbtCompound persistentData = new NbtCompound();
+
         public static class QuirkInstance {
             public String quirkId;
             public int count = 1;
@@ -158,7 +161,6 @@ public class QuirkSystem {
             for (QuirkInstance instance : quirks) {
                 Quirk quirk = QuirkRegistry.get(new Identifier(instance.quirkId));
                 if (quirk != null) {
-                    // UPDATED: Use context-aware getter
                     List<Ability> instanceAbilities = quirk.getAbilities(instance);
                     for (Ability ability : instanceAbilities) {
                         ability.tick();
@@ -200,6 +202,9 @@ public class QuirkSystem {
             nbt.putInt("SelectedQ", selectedQuirkIndex);
             nbt.putInt("SelectedA", selectedAbilityIndex);
 
+            // FIX: Save persistent data
+            nbt.put("PlayerData", persistentData);
+
             NbtList quirkList = new NbtList();
             for(QuirkInstance qi : quirks) {
                 NbtCompound qTag = new NbtCompound();
@@ -213,7 +218,6 @@ public class QuirkSystem {
                 NbtCompound cdTag = new NbtCompound();
                 Quirk q = QuirkRegistry.get(new Identifier(qi.quirkId));
                 if (q != null) {
-                    // UPDATED: Save cooldowns based on dynamic list
                     List<Ability> abilities = q.getAbilities(qi);
                     for(int i=0; i<abilities.size(); i++) {
                         cdTag.putInt("A"+i, abilities.get(i).getCurrentCooldown());
@@ -237,6 +241,9 @@ public class QuirkSystem {
             if (nbt.contains("StaminaCur")) currentStamina = nbt.getDouble("StaminaCur");
             if (nbt.contains("CooldownsDisabled")) cooldownsDisabled = nbt.getBoolean("CooldownsDisabled");
 
+            // FIX: Load persistent data
+            if (nbt.contains("PlayerData")) persistentData = nbt.getCompound("PlayerData");
+
             selectedQuirkIndex = nbt.getInt("SelectedQ");
             selectedAbilityIndex = nbt.getInt("SelectedA");
 
@@ -251,13 +258,12 @@ public class QuirkSystem {
                 if (qTag.contains("Data")) qi.persistentData = qTag.getCompound("Data");
                 if (qTag.contains("Locked")) qi.isLocked = qTag.getBoolean("Locked");
                 qi.awakened = qTag.getBoolean("Awakened");
-                quirks.add(qi); // Add to list first so getAbilities works if it needs self-ref
+                quirks.add(qi);
 
                 if (qTag.contains("Cooldowns")) {
                     NbtCompound cdTag = qTag.getCompound("Cooldowns");
                     Quirk q = QuirkRegistry.get(new Identifier(id));
                     if (q != null) {
-                        // UPDATED: Load cooldowns based on dynamic list
                         List<Ability> abilities = q.getAbilities(qi);
                         for(int j=0; j<abilities.size(); j++) {
                             if(cdTag.contains("A"+j)) {

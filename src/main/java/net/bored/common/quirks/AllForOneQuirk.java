@@ -1,8 +1,11 @@
 package net.bored.common.quirks;
 
 import net.bored.api.QuirkSystem;
+import net.bored.common.UniqueQuirkState;
+import net.bored.config.PlusUltraConfig;
 import net.minecraft.entity.LivingEntity;
 import net.minecraft.entity.player.PlayerEntity;
+import net.minecraft.server.world.ServerWorld;
 import net.minecraft.text.Text;
 import net.minecraft.util.Identifier;
 
@@ -47,6 +50,23 @@ public class AllForOneQuirk extends QuirkSystem.Quirk {
 
     @Override
     public void onUpdate(LivingEntity entity, QuirkSystem.QuirkData data, QuirkSystem.QuirkData.QuirkInstance instance) {
-        // AFO Passive
+        // AFO Passive: Ensure it is marked as taken
+        if (PlusUltraConfig.get().limitUniqueQuirks && !entity.getWorld().isClient && entity.age % 100 == 0) {
+            UniqueQuirkState state = UniqueQuirkState.getServerState((ServerWorld) entity.getWorld());
+            if (!state.isQuirkTaken(ID.toString())) {
+                state.setQuirkTaken(ID.toString(), true);
+            }
+        }
+    }
+
+    @Override
+    public void onRemove(LivingEntity entity, QuirkSystem.QuirkData data) {
+        if (!entity.getWorld().isClient && PlusUltraConfig.get().limitUniqueQuirks) {
+            UniqueQuirkState state = UniqueQuirkState.getServerState((ServerWorld) entity.getWorld());
+            state.setQuirkTaken(ID.toString(), false);
+            if (entity instanceof PlayerEntity p) {
+                p.sendMessage(Text.of("§7All For One has left you..."), false);
+            }
+        }
     }
 }

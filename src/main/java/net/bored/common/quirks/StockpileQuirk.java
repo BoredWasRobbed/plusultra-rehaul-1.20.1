@@ -3,6 +3,7 @@ package net.bored.common.quirks;
 import net.bored.api.QuirkSystem;
 import net.bored.common.PlusUltraNetwork;
 import net.bored.common.entities.FlickProjectileEntity;
+import net.bored.config.PlusUltraConfig;
 import net.minecraft.block.BlockState;
 import net.minecraft.entity.LivingEntity;
 import net.minecraft.entity.player.PlayerEntity;
@@ -53,7 +54,13 @@ public class StockpileQuirk extends QuirkSystem.Quirk {
 
                 if (entity.getWorld() instanceof ServerWorld world) {
                     // DESTRUCTION LOGIC
-                    if (selectedStock >= 75.0f && !data.runtimeTags.containsKey("DESTRUCTION_DISABLED")) {
+                    // Check Global Config First
+                    boolean canDestroy = !PlusUltraConfig.get().disableQuirkDestruction;
+
+                    // Then check runtime tags (temporary disabled via command)
+                    if (data.runtimeTags.containsKey("DESTRUCTION_DISABLED")) canDestroy = false;
+
+                    if (selectedStock >= 75.0f && canDestroy) {
                         BlockPos destCenter = new BlockPos((int)(entity.getX() + (rotation.x * 4.0)), (int)(entity.getY() + (rotation.y * 4.0)), (int)(entity.getZ() + (rotation.z * 4.0)));
                         int radius = 3 + (int)((selectedStock - 75) / 12.5);
                         createDestruction(world, destCenter, radius, entity, selectedStock);
@@ -313,7 +320,11 @@ public class StockpileQuirk extends QuirkSystem.Quirk {
     private void handleLanding(LivingEntity entity, double fallHeight, QuirkSystem.QuirkData data) {
         if (!(entity.getWorld() instanceof ServerWorld world)) return;
 
-        if (fallHeight > 4.0 && !data.runtimeTags.containsKey("DESTRUCTION_DISABLED")) {
+        // Check Destruction Config here too
+        boolean canDestroy = !PlusUltraConfig.get().disableQuirkDestruction;
+        if (data.runtimeTags.containsKey("DESTRUCTION_DISABLED")) canDestroy = false;
+
+        if (fallHeight > 4.0 && canDestroy) {
             int radius = (int) (fallHeight / 5.0);
             if (radius > 6) radius = 6;
 

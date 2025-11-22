@@ -8,6 +8,7 @@ import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.suggestion.SuggestionProvider;
 import net.bored.api.IQuirkDataAccessor;
 import net.bored.api.QuirkSystem;
+import net.bored.config.PlusUltraConfig;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
 import net.minecraft.command.CommandRegistryAccess;
 import net.minecraft.command.argument.EntityArgumentType;
@@ -17,6 +18,7 @@ import net.minecraft.entity.LivingEntity;
 import net.minecraft.server.command.CommandManager;
 import net.minecraft.server.command.ServerCommandSource;
 import net.minecraft.server.network.ServerPlayerEntity;
+import net.minecraft.server.world.ServerWorld;
 import net.minecraft.text.Text;
 import net.minecraft.util.Identifier;
 
@@ -146,6 +148,24 @@ public class PlusUltraCommands {
     private static int setQuirk(ServerCommandSource source, Entity target, Identifier quirkId) {
         if (!(target instanceof LivingEntity livingTarget)) return 0;
         if (QuirkRegistry.get(quirkId) == null) return 0;
+
+        PlusUltraConfig config = PlusUltraConfig.get();
+        if (!config.isQuirkEnabled(quirkId.toString())) {
+            source.sendError(Text.of("That quirk is currently disabled in the config."));
+            return 0;
+        }
+
+        // Uniqueness Check
+        if (config.limitUniqueQuirks && !source.hasPermissionLevel(4)) { // Op Lvl 4 overrides logic
+            if (quirkId.toString().equals("plusultra:one_for_all") || quirkId.toString().equals("plusultra:all_for_one")) {
+                UniqueQuirkState state = UniqueQuirkState.getServerState((ServerWorld) source.getWorld());
+                if (state.isQuirkTaken(quirkId.toString())) {
+                    source.sendError(Text.of("That quirk is already taken by another player in this world."));
+                    return 0;
+                }
+            }
+        }
+
         clearQuirks(source, target);
         QuirkSystem.QuirkData data = ((IQuirkDataAccessor) livingTarget).getQuirkData();
         data.addQuirk(quirkId.toString(), true);
@@ -158,6 +178,13 @@ public class PlusUltraCommands {
     private static int addQuirk(ServerCommandSource source, Entity target, Identifier quirkId) {
         if (!(target instanceof LivingEntity livingTarget)) return 0;
         if (QuirkRegistry.get(quirkId) == null) return 0;
+
+        PlusUltraConfig config = PlusUltraConfig.get();
+        if (!config.isQuirkEnabled(quirkId.toString())) {
+            source.sendError(Text.of("That quirk is currently disabled in the config."));
+            return 0;
+        }
+
         QuirkSystem.QuirkData data = ((IQuirkDataAccessor) livingTarget).getQuirkData();
         data.addQuirk(quirkId.toString(), false);
         if (livingTarget instanceof ServerPlayerEntity player) PlusUltraNetwork.sync(player);

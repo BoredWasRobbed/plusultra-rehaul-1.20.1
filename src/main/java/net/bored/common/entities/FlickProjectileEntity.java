@@ -3,6 +3,7 @@ package net.bored.common.entities;
 import net.bored.PlusUltra;
 import net.bored.api.IQuirkDataAccessor;
 import net.bored.api.QuirkSystem;
+import net.bored.config.PlusUltraConfig;
 import net.minecraft.block.BlockState;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.EntityType;
@@ -105,7 +106,9 @@ public class FlickProjectileEntity extends PersistentProjectileEntity {
         } else {
             if (powerPercent >= 50) {
                 Entity owner = this.getOwner();
-                boolean destructionEnabled = true;
+
+                // Config Check First
+                boolean destructionEnabled = !PlusUltraConfig.get().disableQuirkDestruction;
 
                 if (owner instanceof LivingEntity livingOwner) {
                     QuirkSystem.QuirkData data = ((IQuirkDataAccessor)livingOwner).getQuirkData();
