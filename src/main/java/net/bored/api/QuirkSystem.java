@@ -19,7 +19,6 @@ public class QuirkSystem {
     public static abstract class Quirk {
         private final Identifier id;
         private final List<Ability> abilities = new ArrayList<>();
-        private boolean awakened = false;
 
         public Quirk(Identifier id) {
             this.id = id;
@@ -27,10 +26,16 @@ public class QuirkSystem {
         }
         public abstract void registerAbilities();
 
-        // UPDATED: Now receives QuirkData
-        public abstract void onUpdate(LivingEntity entity, QuirkData data);
+        public abstract void onUpdate(LivingEntity entity, QuirkData data, QuirkData.QuirkInstance instance);
 
-        public boolean checkAwakening(LivingEntity entity, QuirkData data) { return false; }
+        public void onRemove(LivingEntity entity, QuirkData data) {}
+
+        public float getPowerMultiplier(int count) {
+            return 1.0f + ((count - 1) * 0.5f);
+        }
+
+        public int getIconColor() { return 0xFF00E5FF; } // Default Cyan
+
         public void addAbility(Ability ability) { this.abilities.add(ability); }
         public List<Ability> getAbilities() { return abilities; }
         public Identifier getId() { return id; }
@@ -52,11 +57,14 @@ public class QuirkSystem {
             this.staminaCost = staminaCost;
         }
 
-        public abstract void onActivate(LivingEntity entity, QuirkData data);
-        public void onHoldTick(LivingEntity entity, QuirkData data) {}
-        public void onRelease(LivingEntity entity, QuirkData data) {}
+        public abstract void onActivate(LivingEntity entity, QuirkData data, QuirkData.QuirkInstance instance);
+
+        public void onHoldTick(LivingEntity entity, QuirkData data, QuirkData.QuirkInstance instance) {}
+        public void onRelease(LivingEntity entity, QuirkData data, QuirkData.QuirkInstance instance) {}
+
         public void tick() { if (currentCooldown > 0) currentCooldown--; }
         public boolean isReady() { return currentCooldown <= 0; }
+        public AbilityType getType() { return type; }
 
         public boolean canUse(QuirkData data) {
             return data.level >= requiredLevel && isReady() && data.currentStamina >= staminaCost;
@@ -72,6 +80,7 @@ public class QuirkSystem {
 
     public static class QuirkData {
         public int strength = 0, endurance = 0, speed = 0, staminaMax = 0, meta = 0;
+        public int statPoints = 1; // Start with 1 point
         public int level = 1, experience = 0;
         public double currentStamina = 100;
 
@@ -83,9 +92,43 @@ public class QuirkSystem {
 
         public static class QuirkInstance {
             public String quirkId;
+            public int count = 1;
+            public boolean innate = false;
             public boolean isPassivesActive = true;
             public boolean awakened = false;
             public QuirkInstance(String id) { this.quirkId = id; }
+        }
+
+        public void addQuirk(String id, boolean isInnate) {
+            for (QuirkInstance q : quirks) {
+                if (q.quirkId.equals(id)) {
+                    q.count++;
+                    return;
+                }
+            }
+            QuirkInstance newInstance = new QuirkInstance(id);
+            newInstance.innate = isInnate;
+            quirks.add(newInstance);
+        }
+
+        public void addQuirk(String id) {
+            addQuirk(id, false);
+        }
+
+        public boolean removeQuirk(String id) {
+            for (int i = 0; i < quirks.size(); i++) {
+                QuirkInstance q = quirks.get(i);
+                if (q.quirkId.equals(id)) {
+                    if (q.count > 1) {
+                        q.count--;
+                        return false;
+                    } else {
+                        quirks.remove(i);
+                        return true;
+                    }
+                }
+            }
+            return true;
         }
 
         public void tick(LivingEntity entity) {
@@ -93,39 +136,46 @@ public class QuirkSystem {
             if (currentStamina < getMaxStaminaPool()) currentStamina = Math.min(currentStamina + regen, getMaxStaminaPool());
             if (aiActionCooldown > 0) aiActionCooldown--;
 
-            // Tick Cooldowns & Passives
             for (QuirkInstance instance : quirks) {
                 Quirk quirk = QuirkRegistry.get(new Identifier(instance.quirkId));
                 if (quirk != null) {
-                    // Tick Abilities
                     for (Ability ability : quirk.getAbilities()) {
                         ability.tick();
                     }
-
-                    // Tick Passive Update
                     if (instance.isPassivesActive) {
-                        quirk.onUpdate(entity, this); // Pass 'this' (QuirkData)
+                        quirk.onUpdate(entity, this, instance);
                     }
                 }
             }
         }
 
         public double getMaxStaminaPool() { return 100 + (staminaMax * 5); }
+        public float getMaxXp() { return level * 100f; }
+
+        // NEW: Helper to add XP and handle leveling
+        public void addXp(int amount) {
+            if (level >= 100) return; // Max Level 100 cap
+
+            this.experience += amount;
+            while (this.experience >= getMaxXp() && level < 100) {
+                this.experience -= getMaxXp();
+                this.level++;
+                this.statPoints++; // Gain 1 point per level
+            }
+        }
 
         public void writeToNbt(NbtCompound nbt) {
-            // Stats
             nbt.putInt("Strength", strength);
             nbt.putInt("Endurance", endurance);
             nbt.putInt("Speed", speed);
             nbt.putInt("StaminaMax", staminaMax);
             nbt.putInt("Meta", meta);
+            nbt.putInt("StatPoints", statPoints);
 
-            // Progression
             nbt.putInt("Level", level);
             nbt.putInt("XP", experience);
             nbt.putDouble("StaminaCur", currentStamina);
 
-            // State
             nbt.putInt("SelectedQ", selectedQuirkIndex);
             nbt.putInt("SelectedA", selectedAbilityIndex);
 
@@ -133,6 +183,8 @@ public class QuirkSystem {
             for(QuirkInstance qi : quirks) {
                 NbtCompound qTag = new NbtCompound();
                 qTag.putString("ID", qi.quirkId);
+                qTag.putInt("Count", qi.count);
+                qTag.putBoolean("Innate", qi.innate);
                 qTag.putBoolean("Awakened", qi.awakened);
 
                 NbtCompound cdTag = new NbtCompound();
@@ -143,7 +195,6 @@ public class QuirkSystem {
                     }
                 }
                 qTag.put("Cooldowns", cdTag);
-
                 quirkList.add(qTag);
             }
             nbt.put("Quirks", quirkList);
@@ -155,6 +206,7 @@ public class QuirkSystem {
             if (nbt.contains("Speed")) speed = nbt.getInt("Speed");
             if (nbt.contains("StaminaMax")) staminaMax = nbt.getInt("StaminaMax");
             if (nbt.contains("Meta")) meta = nbt.getInt("Meta");
+            if (nbt.contains("StatPoints")) statPoints = nbt.getInt("StatPoints");
 
             if (nbt.contains("Level")) level = nbt.getInt("Level");
             if (nbt.contains("XP")) experience = nbt.getInt("XP");
@@ -169,6 +221,8 @@ public class QuirkSystem {
                 NbtCompound qTag = quirkList.getCompound(i);
                 String id = qTag.getString("ID");
                 QuirkInstance qi = new QuirkInstance(id);
+                if (qTag.contains("Count")) qi.count = qTag.getInt("Count");
+                if (qTag.contains("Innate")) qi.innate = qTag.getBoolean("Innate");
                 qi.awakened = qTag.getBoolean("Awakened");
                 quirks.add(qi);
 
