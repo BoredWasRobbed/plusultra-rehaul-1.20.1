@@ -26,19 +26,20 @@ public class PlusUltraClientHandlers implements ClientModInitializer {
     public static KeyBinding activateKey;
     public static KeyBinding switchKey;
     public static KeyBinding menuKey;
-    public static KeyBinding statsKey; // NEW
+    public static KeyBinding statsKey;
+    public static KeyBinding specialKey;
 
     @Override
     public void onInitializeClient() {
         activateKey = KeyBindingHelper.registerKeyBinding(new KeyBinding("key.plusultra.activate", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_Z, "category.plusultra.main"));
         switchKey = KeyBindingHelper.registerKeyBinding(new KeyBinding("key.plusultra.switch", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_R, "category.plusultra.main"));
         menuKey = KeyBindingHelper.registerKeyBinding(new KeyBinding("key.plusultra.menu", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_V, "category.plusultra.main"));
-
-        // Register Stats Menu Key (Default: K)
         statsKey = KeyBindingHelper.registerKeyBinding(new KeyBinding("key.plusultra.stats", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_K, "category.plusultra.main"));
+        specialKey = KeyBindingHelper.registerKeyBinding(new KeyBinding("key.plusultra.special", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_G, "category.plusultra.main"));
 
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             if (client.player == null) return;
+
             if (activateKey.wasPressed()) {
                 ClientPlayNetworking.send(PlusUltraNetwork.ACTIVATE_ABILITY, PacketByteBufs.create());
             }
@@ -50,9 +51,18 @@ public class PlusUltraClientHandlers implements ClientModInitializer {
                     client.player.sendMessage(Text.of("§cYou need at least 2 Quirks to open the Switcher!"), true);
                 }
             }
-            // Open Stat Menu
             if (statsKey.wasPressed()) {
                 client.setScreen(new StatMenuScreen());
+            }
+
+            // NEW: Toggle Destruction (Shift + R)
+            if (switchKey.wasPressed()) {
+                if (client.options.sneakKey.isPressed()) {
+                    ClientPlayNetworking.send(PlusUltraNetwork.TOGGLE_DESTRUCTION, PacketByteBufs.create());
+                }
+                // Note: If just R is pressed without holding (for scrolling),
+                // it relies on MouseScrollHandler or key checking elsewhere.
+                // Usually single-press R isn't bound to a specific action except holding for scroll wheel.
             }
         });
     }

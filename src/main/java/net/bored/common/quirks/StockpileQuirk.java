@@ -1,0 +1,334 @@
+package net.bored.common.quirks;
+
+import net.bored.api.QuirkSystem;
+import net.bored.common.PlusUltraNetwork;
+import net.bored.common.entities.FlickProjectileEntity;
+import net.minecraft.block.BlockState;
+import net.minecraft.entity.LivingEntity;
+import net.minecraft.entity.player.PlayerEntity;
+import net.minecraft.particle.ParticleTypes;
+import net.minecraft.server.network.ServerPlayerEntity;
+import net.minecraft.server.world.ServerWorld;
+import net.minecraft.sound.SoundCategory;
+import net.minecraft.sound.SoundEvents;
+import net.minecraft.text.Text;
+import net.minecraft.util.Hand;
+import net.minecraft.util.Identifier;
+import net.minecraft.util.math.BlockPos;
+import net.minecraft.util.math.Box;
+import net.minecraft.util.math.Vec3d;
+import net.minecraft.world.GameRules;
+import net.minecraft.world.World;
+
+import java.util.List;
+
+public class StockpileQuirk extends QuirkSystem.Quirk {
+    public static final Identifier ID = new Identifier("plusultra", "stockpile");
+
+    public StockpileQuirk() { super(ID); }
+
+    @Override
+    public void registerAbilities() {
+        // Ability 1: Smash
+        this.addAbility(new QuirkSystem.Ability("Smash", QuirkSystem.AbilityType.INSTANT, 60, 1, 10.0) {
+            @Override
+            public void onActivate(LivingEntity entity, QuirkSystem.QuirkData data, QuirkSystem.QuirkData.QuirkInstance instance) {
+                float maxStock = instance.persistentData.getFloat("StockpilePercent");
+                float tempSelected = instance.persistentData.contains("SelectedPercent") ?
+                        instance.persistentData.getFloat("SelectedPercent") : maxStock;
+
+                if (tempSelected > maxStock) tempSelected = maxStock;
+                final float selectedStock = tempSelected;
+
+                float multiplier = getPowerMultiplier(instance.count, data);
+                float damage = (5.0f + (selectedStock * 0.2f)) * multiplier;
+
+                entity.swingHand(Hand.MAIN_HAND, true);
+
+                Vec3d rotation = entity.getRotationVector();
+                double forwardOffset = 2.5;
+                double impactX = entity.getX() + (rotation.x * forwardOffset);
+                double impactY = entity.getY() + (rotation.y * forwardOffset) + 1.0;
+                double impactZ = entity.getZ() + (rotation.z * forwardOffset);
+
+                if (entity.getWorld() instanceof ServerWorld world) {
+                    // DESTRUCTION LOGIC
+                    if (selectedStock >= 75.0f && !data.runtimeTags.containsKey("DESTRUCTION_DISABLED")) {
+                        BlockPos destCenter = new BlockPos((int)(entity.getX() + (rotation.x * 4.0)), (int)(entity.getY() + (rotation.y * 4.0)), (int)(entity.getZ() + (rotation.z * 4.0)));
+                        // Scale radius: 3 base + up to 2 extra at 100%
+                        int radius = 3 + (int)((selectedStock - 75) / 12.5);
+                        // Pass selectedStock to influence breaking power
+                        createDestruction(world, destCenter, radius, entity, selectedStock);
+                    }
+
+                    // SOUNDS
+                    float pitch = 1.0f - (selectedStock / 200.0f);
+                    float volume = 1.0f + (selectedStock / 50.0f);
+
+                    world.playSound(null, entity.getX(), entity.getY(), entity.getZ(),
+                            SoundEvents.ENTITY_PLAYER_ATTACK_STRONG, SoundCategory.PLAYERS, volume, pitch);
+
+                    if (selectedStock > 50) {
+                        world.playSound(null, entity.getX(), entity.getY(), entity.getZ(),
+                                SoundEvents.ENTITY_GENERIC_EXPLODE, SoundCategory.PLAYERS, volume * 0.8f, 1.0f);
+                    }
+                    if (selectedStock > 80) {
+                        world.playSound(null, entity.getX(), entity.getY(), entity.getZ(),
+                                SoundEvents.ENTITY_WARDEN_SONIC_BOOM, SoundCategory.PLAYERS, volume * 0.5f, 0.5f);
+                    }
+
+                    // PARTICLES
+                    int particleCount = (int)(selectedStock / 2);
+                    if (selectedStock < 20) {
+                        world.spawnParticles(ParticleTypes.POOF, impactX, impactY, impactZ, 10, 0.2, 0.2, 0.2, 0.05);
+                    } else if (selectedStock < 70) {
+                        world.spawnParticles(ParticleTypes.EXPLOSION, impactX, impactY, impactZ, 5 + (particleCount/5), 1.0, 1.0, 1.0, 0.1);
+                        world.spawnParticles(ParticleTypes.CRIT, impactX, impactY, impactZ, 20 + particleCount, 1.5, 1.5, 1.5, 0.5);
+                    } else {
+                        // Massive VFX
+                        world.spawnParticles(ParticleTypes.EXPLOSION_EMITTER, impactX, impactY, impactZ, 2 + (particleCount/20), 2.0, 2.0, 2.0, 0.0);
+                        world.spawnParticles(ParticleTypes.SONIC_BOOM, impactX, impactY, impactZ, 1, 0, 0, 0, 0);
+                        world.spawnParticles(ParticleTypes.ELECTRIC_SPARK, impactX, impactY, impactZ, 50 + particleCount, 3.0, 3.0, 3.0, 0.5);
+                        world.spawnParticles(ParticleTypes.FLASH, impactX, impactY, impactZ, 1, 0, 0, 0, 0);
+                        world.spawnParticles(ParticleTypes.CAMPFIRE_COSY_SMOKE, impactX, impactY, impactZ, 20, 1.0, 1.0, 1.0, 0.1);
+                    }
+                }
+
+                double radius = 2.5 + (selectedStock / 50.0); // Hitbox scales slightly too
+                Box damageBox = new Box(
+                        impactX - radius, impactY - radius, impactZ - radius,
+                        impactX + radius, impactY + radius, impactZ + radius
+                );
+
+                entity.getWorld().getEntitiesByClass(LivingEntity.class, damageBox, e -> e != entity).forEach(e -> {
+                    e.damage(entity.getDamageSources().playerAttack((PlayerEntity)entity), damage);
+                    e.takeKnockback(1.0 + (selectedStock / 40.0), entity.getX() - e.getX(), entity.getZ() - e.getZ());
+                });
+
+                data.currentStamina -= this.getCost();
+
+                if (entity instanceof PlayerEntity p) {
+                    String msg = String.format("§eSmash! (%.0f%%) [%.1f Dmg]", selectedStock, damage);
+                    p.sendMessage(Text.of(msg), true);
+                }
+                this.triggerCooldown();
+            }
+        });
+
+        // Ability 2: Leap
+        this.addAbility(new QuirkSystem.Ability("Leap", QuirkSystem.AbilityType.INSTANT, 40, 1, 15.0) {
+            @Override
+            public void onActivate(LivingEntity entity, QuirkSystem.QuirkData data, QuirkSystem.QuirkData.QuirkInstance instance) {
+                float maxStock = instance.persistentData.getFloat("StockpilePercent");
+                float tempSelected = instance.persistentData.contains("SelectedPercent") ?
+                        instance.persistentData.getFloat("SelectedPercent") : maxStock;
+
+                if (tempSelected > maxStock) tempSelected = maxStock;
+                final float selectedStock = tempSelected;
+
+                if (!entity.isOnGround() && selectedStock < 35.0f) {
+                    if (entity instanceof PlayerEntity p) {
+                        p.sendMessage(Text.of("§cMust use at least 35% to Double Jump!"), true);
+                    }
+                    return;
+                }
+
+                float multiplier = getPowerMultiplier(instance.count, data);
+                float force = (0.8f + (selectedStock * 0.03f)) * multiplier;
+
+                Vec3d dir = entity.getRotationVector();
+                entity.addVelocity(dir.x * force, (dir.y * force) + 0.5, dir.z * force);
+                entity.velocityModified = true;
+
+                data.runtimeTags.put("STOCKPILE_LEAPING", "true");
+                data.runtimeTags.put("STOCKPILE_LEAP_Y", String.valueOf(entity.getY()));
+                data.runtimeTags.put("STOCKPILE_LEAP_PEAK", String.valueOf(entity.getY()));
+
+                if (entity.getWorld() instanceof ServerWorld world) {
+                    world.playSound(null, entity.getX(), entity.getY(), entity.getZ(),
+                            SoundEvents.ENTITY_GENERIC_EXPLODE, SoundCategory.PLAYERS, 0.5f + (selectedStock / 100f), 2.0f - (selectedStock / 100f));
+                    // More particles for leap
+                    int count = 10 + (int)(selectedStock / 2);
+                    world.spawnParticles(ParticleTypes.CLOUD, entity.getX(), entity.getY(), entity.getZ(), count, 0.5, 0.1, 0.5, 0.1);
+                    if (selectedStock > 50) {
+                        world.spawnParticles(ParticleTypes.EXPLOSION, entity.getX(), entity.getY(), entity.getZ(), 2, 0.2, 0.1, 0.2, 0.0);
+                    }
+                }
+
+                data.currentStamina -= this.getCost();
+
+                if (entity instanceof PlayerEntity p) {
+                    p.sendMessage(Text.of(String.format("§bLeap! (%.0f%%)", selectedStock)), true);
+                }
+                this.triggerCooldown();
+            }
+        });
+
+        // Ability 3: Flick
+        this.addAbility(new QuirkSystem.Ability("Flick", QuirkSystem.AbilityType.INSTANT, 30, 1, 20.0) {
+            @Override
+            public void onActivate(LivingEntity entity, QuirkSystem.QuirkData data, QuirkSystem.QuirkData.QuirkInstance instance) {
+                float maxStock = instance.persistentData.getFloat("StockpilePercent");
+                float tempSelected = instance.persistentData.contains("SelectedPercent") ?
+                        instance.persistentData.getFloat("SelectedPercent") : maxStock;
+                if (tempSelected > maxStock) tempSelected = maxStock;
+                final float selectedStock = tempSelected;
+
+                float multiplier = getPowerMultiplier(instance.count, data);
+                float damage = (2.0f + (selectedStock * 0.1f)) * multiplier;
+
+                entity.swingHand(Hand.MAIN_HAND, true);
+
+                if (!entity.getWorld().isClient) {
+                    FlickProjectileEntity proj = new FlickProjectileEntity(entity.getWorld(), entity, selectedStock, damage);
+                    proj.setVelocity(entity, entity.getPitch(), entity.getYaw(), 0.0F, 3.0F, 1.0F);
+                    entity.getWorld().spawnEntity(proj);
+
+                    // FIRING SOUNDS
+                    float volume = 1.0f + (selectedStock / 50.0f);
+                    float pitch = 2.0f - (selectedStock / 100.0f);
+
+                    entity.getWorld().playSound(null, entity.getX(), entity.getY(), entity.getZ(),
+                            SoundEvents.ENTITY_ARROW_SHOOT, SoundCategory.PLAYERS, volume, pitch);
+
+                    if(selectedStock > 40) {
+                        entity.getWorld().playSound(null, entity.getX(), entity.getY(), entity.getZ(),
+                                SoundEvents.ENTITY_GENERIC_EXPLODE, SoundCategory.PLAYERS, volume * 0.5f, 2.0f);
+                    }
+                    if(selectedStock > 80) {
+                        entity.getWorld().playSound(null, entity.getX(), entity.getY(), entity.getZ(),
+                                SoundEvents.ENTITY_LIGHTNING_BOLT_THUNDER, SoundCategory.PLAYERS, volume * 0.3f, 2.0f);
+                    }
+                }
+
+                data.currentStamina -= this.getCost();
+
+                if (entity instanceof PlayerEntity p) {
+                    p.sendMessage(Text.of("§bFlick!"), true);
+                }
+                this.triggerCooldown();
+            }
+        });
+    }
+
+    @Override
+    public void onUpdate(LivingEntity entity, QuirkSystem.QuirkData data, QuirkSystem.QuirkData.QuirkInstance instance) {
+        if (data.runtimeTags.containsKey("STOCKPILE_LEAPING")) {
+            entity.fallDistance = 0;
+
+            double currentY = entity.getY();
+            double peakY = Double.parseDouble(data.runtimeTags.getOrDefault("STOCKPILE_LEAP_PEAK", String.valueOf(currentY)));
+
+            if (currentY > peakY) {
+                data.runtimeTags.put("STOCKPILE_LEAP_PEAK", String.valueOf(currentY));
+                peakY = currentY;
+            }
+
+            if (entity.isOnGround() && !data.runtimeTags.containsKey("STOCKPILE_LEAP_GRACE")) {
+                if (peakY - currentY > 1.0) {
+                    handleLanding(entity, peakY - currentY, data);
+                    data.runtimeTags.remove("STOCKPILE_LEAPING");
+                    data.runtimeTags.remove("STOCKPILE_LEAP_Y");
+                    data.runtimeTags.remove("STOCKPILE_LEAP_PEAK");
+                }
+            }
+        }
+
+        if (entity.getWorld().isClient) return;
+
+        long currentTime = entity.getWorld().getTime();
+
+        if (!instance.persistentData.contains("LastStockpileTime")) {
+            instance.persistentData.putLong("LastStockpileTime", currentTime);
+            return;
+        }
+
+        long lastTime = instance.persistentData.getLong("LastStockpileTime");
+
+        if (currentTime > lastTime) {
+            long diff = currentTime - lastTime;
+            float current = instance.persistentData.getFloat("StockpilePercent");
+
+            if (current < 100.0f) {
+                double increment = (double)diff / 24000.0;
+                current += (float)increment;
+                if (current > 100.0f) current = 100.0f;
+
+                instance.persistentData.putFloat("StockpilePercent", current);
+
+                if (instance.persistentData.contains("SelectedPercent")) {
+                    float sel = instance.persistentData.getFloat("SelectedPercent");
+                    if (sel > current) instance.persistentData.putFloat("SelectedPercent", current);
+                }
+
+                if ((diff > 20 || entity.age % 100 == 0) && entity instanceof ServerPlayerEntity sp) {
+                    PlusUltraNetwork.sync(sp);
+                }
+            }
+        }
+        instance.persistentData.putLong("LastStockpileTime", currentTime);
+    }
+
+    // Updated to use hardness scaling
+    private void createDestruction(World world, BlockPos center, int radius, LivingEntity entity, float power) {
+        if (radius > 0 && world.getGameRules().getBoolean(GameRules.DO_MOB_GRIEFING)) {
+            for (int x = -radius; x <= radius; x++) {
+                for (int y = -radius; y <= radius; y++) {
+                    for (int z = -radius; z <= radius; z++) {
+                        if (x*x + y*y + z*z <= radius*radius) {
+                            BlockPos p = center.add(x, y, z);
+                            if (!world.isAir(p)) {
+                                BlockState state = world.getBlockState(p);
+                                float hardness = state.getHardness(world, p);
+
+                                if (hardness >= 0) {
+                                    // Logic:
+                                    // High Power + Low Hardness = High Chance
+                                    // Low Power + High Hardness = Low Chance
+                                    // Base chance is proportional to (Power / Hardness)
+
+                                    float breakChance = 1.0f;
+                                    if (hardness > 0) {
+                                        // e.g., Power 100 vs Hardness 1.5 (Stone) -> 100/15 = 6.6 -> 100%
+                                        // e.g., Power 50 vs Hardness 50 (Obsidian) -> 50/500 = 0.1 -> 10%
+                                        breakChance = (power / (hardness * 10.0f));
+                                    }
+
+                                    // Always break very soft blocks (dirt, grass) if close enough
+                                    if (hardness < 0.5f) breakChance = 1.0f;
+
+                                    if (world.random.nextFloat() < breakChance) {
+                                        world.breakBlock(p, true, entity);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private void handleLanding(LivingEntity entity, double fallHeight, QuirkSystem.QuirkData data) {
+        if (!(entity.getWorld() instanceof ServerWorld world)) return;
+
+        if (fallHeight > 4.0 && !data.runtimeTags.containsKey("DESTRUCTION_DISABLED")) {
+            int radius = (int) (fallHeight / 5.0);
+            if (radius > 6) radius = 6;
+
+            // Calculate an equivalent 'power' based on fall height for the destruction calc
+            float impactPower = (float)fallHeight * 2.0f;
+            if (impactPower > 100f) impactPower = 100f;
+
+            createDestruction(world, entity.getBlockPos().down(), radius, entity, impactPower);
+        }
+
+        world.playSound(null, entity.getX(), entity.getY(), entity.getZ(),
+                SoundEvents.ENTITY_GENERIC_EXPLODE, SoundCategory.PLAYERS, 1.0f, 0.8f);
+        world.spawnParticles(ParticleTypes.EXPLOSION, entity.getX(), entity.getY(), entity.getZ(), 3, 1.0, 0.1, 1.0, 0.0);
+
+        if (entity instanceof PlayerEntity p) {
+            p.sendMessage(Text.of("§7Landed from " + String.format("%.1f", fallHeight) + "m"), true);
+        }
+    }
+}

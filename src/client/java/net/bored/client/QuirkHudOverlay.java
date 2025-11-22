@@ -20,6 +20,9 @@ public class QuirkHudOverlay implements HudRenderCallback {
     private static final int LOCKED_COLOR = 0xFF5555;
     private static final int XP_COLOR = 0xFF00FF00;
 
+    private static final int STOCKPILE_BG = 0xFF000000;
+    private static final int STOCKPILE_FILL = 0xFFFFFFFF;
+
     private static final int BAR_WIDTH = 100;
     private static final int BAR_HEIGHT = 6;
     private static final int PADDING = 10;
@@ -45,6 +48,11 @@ public class QuirkHudOverlay implements HudRenderCallback {
         int width = context.getScaledWindowWidth();
         int height = context.getScaledWindowHeight();
         TextRenderer font = client.textRenderer;
+
+        // --- RENDER STOCKPILE BAR (Left Side) ---
+        if ("plusultra:stockpile".equals(currentQuirkInstance.quirkId)) {
+            renderStockpileBar(context, font, height, currentQuirkInstance);
+        }
 
         int x = width - BAR_WIDTH - PADDING;
         int y = height - 20;
@@ -92,10 +100,6 @@ public class QuirkHudOverlay implements HudRenderCallback {
                 }
                 displayText += suffix;
 
-                // PRIORITY LOGIC:
-                // 1. Cooldown (Red) - Highest Priority, overrides selection color
-                // 2. Selected (Gold)
-                // 3. Passive (Gray)
                 if (onCooldown) {
                     textColor = LOCKED_COLOR;
                 } else if (isSelected) {
@@ -139,5 +143,46 @@ public class QuirkHudOverlay implements HudRenderCallback {
         float currentXp = data.experience;
         int xpFill = (int) ((currentXp / maxXp) * xpBarWidth);
         context.fill(xpBarX, levelY + 4, xpBarX + xpFill, levelY + 5, XP_COLOR);
+    }
+
+    private void renderStockpileBar(DrawContext context, TextRenderer font, int screenHeight, QuirkSystem.QuirkData.QuirkInstance instance) {
+        float maxPercent = instance.persistentData.getFloat("StockpilePercent");
+        // Get Selected, default to max if not set
+        float selectedPercent = instance.persistentData.contains("SelectedPercent") ?
+                instance.persistentData.getFloat("SelectedPercent") : maxPercent;
+
+        // Visual Clamp for rendering (logic handled on server)
+        if (selectedPercent > maxPercent) selectedPercent = maxPercent;
+
+        int barWidth = 6;
+        int barHeight = 100;
+        int x = 10;
+        int y = (screenHeight / 2) - (barHeight / 2);
+
+        // Background (Black)
+        context.fill(x, y, x + barWidth, y + barHeight, STOCKPILE_BG);
+        context.drawBorder(x, y, barWidth, barHeight, 0xFF555555);
+
+        // Fill Height determines how much white bar to show
+        // We use SELECTED percent for the fill visual to match the action
+        int innerHeight = barHeight - 2;
+        int fillHeight = (int) ((selectedPercent / 100.0f) * innerHeight);
+
+        int fillTopY = (y + barHeight - 1) - fillHeight;
+
+        // Fill (White)
+        context.fill(x + 1, fillTopY, x + barWidth - 1, y + barHeight - 1, STOCKPILE_FILL);
+
+        // Centered Percentage Label - Shows SELECTED %
+        String percentText = String.format("%.0f%%", selectedPercent);
+        int textWidth = font.getWidth(percentText);
+        int textX = x + (barWidth / 2) - (textWidth / 2);
+
+        context.drawTextWithShadow(font, percentText, textX, y - 10, 0xFFFFFFFF);
+
+        // "PWR" Text below
+        int powerWidth = font.getWidth("PWR");
+        int powerX = x + (barWidth / 2) - (powerWidth / 2);
+        context.drawTextWithShadow(font, "PWR", powerX, y + barHeight + 4, 0xFFFFAA00);
     }
 }

@@ -30,8 +30,12 @@ public class QuirkSystem {
 
         public void onRemove(LivingEntity entity, QuirkData data) {}
 
-        public float getPowerMultiplier(int count) {
-            return 1.0f + ((count - 1) * 0.5f);
+        // MODIFIED: Now accepts QuirkData to calculate Meta scaling
+        public float getPowerMultiplier(int count, QuirkData data) {
+            float base = 1.0f + ((count - 1) * 0.5f);
+            // Scaling: 2% power per Meta point
+            float metaMult = 1.0f + (data.meta * 0.02f);
+            return base * metaMult;
         }
 
         public int getIconColor() { return 0xFF00E5FF; } // Default Cyan
@@ -96,6 +100,9 @@ public class QuirkSystem {
             public boolean innate = false;
             public boolean isPassivesActive = true;
             public boolean awakened = false;
+            // NEW: Persistent data storage for quirks (like Stockpile percentage)
+            public NbtCompound persistentData = new NbtCompound();
+
             public QuirkInstance(String id) { this.quirkId = id; }
         }
 
@@ -152,7 +159,6 @@ public class QuirkSystem {
         public double getMaxStaminaPool() { return 100 + (staminaMax * 5); }
         public float getMaxXp() { return level * 100f; }
 
-        // NEW: Helper to add XP and handle leveling
         public void addXp(int amount) {
             if (level >= 100) return; // Max Level 100 cap
 
@@ -186,6 +192,8 @@ public class QuirkSystem {
                 qTag.putInt("Count", qi.count);
                 qTag.putBoolean("Innate", qi.innate);
                 qTag.putBoolean("Awakened", qi.awakened);
+                // Save Persistent Data
+                qTag.put("Data", qi.persistentData);
 
                 NbtCompound cdTag = new NbtCompound();
                 Quirk q = QuirkRegistry.get(new Identifier(qi.quirkId));
@@ -223,6 +231,7 @@ public class QuirkSystem {
                 QuirkInstance qi = new QuirkInstance(id);
                 if (qTag.contains("Count")) qi.count = qTag.getInt("Count");
                 if (qTag.contains("Innate")) qi.innate = qTag.getBoolean("Innate");
+                if (qTag.contains("Data")) qi.persistentData = qTag.getCompound("Data");
                 qi.awakened = qTag.getBoolean("Awakened");
                 quirks.add(qi);
 

@@ -1,6 +1,7 @@
 package net.bored.common;
 
 import com.mojang.brigadier.CommandDispatcher;
+import com.mojang.brigadier.arguments.FloatArgumentType;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.suggestion.SuggestionProvider;
@@ -51,6 +52,13 @@ public class PlusUltraCommands {
                                         .executes(ctx -> getQuirks(ctx.getSource(), EntityArgumentType.getEntity(ctx, "target")))))
                         .then(CommandManager.literal("list")
                                 .executes(ctx -> listRegistryQuirks(ctx.getSource())))
+                        // --- DATA SUBCOMMANDS ---
+                        .then(CommandManager.literal("data")
+                                .then(CommandManager.literal("stockpileTime")
+                                        .then(CommandManager.argument("target", EntityArgumentType.entity())
+                                                .then(CommandManager.argument("amount", FloatArgumentType.floatArg(0, 100))
+                                                        .executes(ctx -> setStockpileTime(ctx.getSource(), EntityArgumentType.getEntity(ctx, "target"), FloatArgumentType.getFloat(ctx, "amount"))))))
+                        )
                 )
                 // --- POINTS SUBCOMMANDS ---
                 .then(CommandManager.literal("points")
@@ -163,6 +171,29 @@ public class PlusUltraCommands {
         for (Identifier id : QuirkRegistry.getKeys()) sb.append(id.toString()).append(", ");
         source.sendFeedback(() -> Text.of(sb.toString()), false);
         return 1;
+    }
+
+    private static int setStockpileTime(ServerCommandSource source, Entity target, float amount) {
+        if (!(target instanceof LivingEntity livingTarget)) return 0;
+        QuirkSystem.QuirkData data = ((IQuirkDataAccessor) livingTarget).getQuirkData();
+
+        boolean found = false;
+        for (QuirkSystem.QuirkData.QuirkInstance qi : data.getQuirks()) {
+            if ("plusultra:stockpile".equals(qi.quirkId)) {
+                qi.persistentData.putFloat("StockpilePercent", amount);
+                found = true;
+                break;
+            }
+        }
+
+        if (found) {
+            if (livingTarget instanceof ServerPlayerEntity player) PlusUltraNetwork.sync(player);
+            source.sendFeedback(() -> Text.of("Set Stockpile % to " + amount + "% for " + target.getName().getString()), true);
+            return 1;
+        } else {
+            source.sendError(Text.of("Target does not have the Stockpile quirk."));
+            return 0;
+        }
     }
 
     // --- POINTS LOGIC ---

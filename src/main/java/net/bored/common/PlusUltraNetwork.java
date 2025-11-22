@@ -20,9 +20,11 @@ public class PlusUltraNetwork {
     public static final Identifier OPEN_STEAL_SELECTION = new Identifier("plusultra", "open_steal_selection");
     public static final Identifier PERFORM_STEAL = new Identifier("plusultra", "perform_steal");
     public static final Identifier TOGGLE_ABILITY = new Identifier("plusultra", "toggle_ability");
-
-    // NEW: Packet to handle stat upgrades
     public static final Identifier UPGRADE_STAT = new Identifier("plusultra", "upgrade_stat");
+    public static final Identifier ADJUST_PERCENTAGE = new Identifier("plusultra", "adjust_percentage");
+
+    // NEW: Toggle Destruction Packet
+    public static final Identifier TOGGLE_DESTRUCTION = new Identifier("plusultra", "toggle_destruction");
 
     public static void registerServerReceivers() {
         ServerPlayNetworking.registerGlobalReceiver(ACTIVATE_ABILITY, (server, player, handler, buf, responseSender) -> {
@@ -131,7 +133,6 @@ public class PlusUltraNetwork {
             });
         });
 
-        // NEW: Handle Stat Upgrades
         ServerPlayNetworking.registerGlobalReceiver(UPGRADE_STAT, (server, player, handler, buf, responseSender) -> {
             int statIndex = buf.readInt();
             int amount = buf.readInt();
@@ -141,7 +142,6 @@ public class PlusUltraNetwork {
 
                 if (amount <= 0 || data.statPoints < amount) return;
 
-                // 0: Strength, 1: Endurance, 2: Speed, 3: Stamina, 4: Meta
                 switch (statIndex) {
                     case 0 -> data.strength += amount;
                     case 1 -> data.endurance += amount;
@@ -152,6 +152,45 @@ public class PlusUltraNetwork {
 
                 data.statPoints -= amount;
                 sync(player);
+            });
+        });
+
+        ServerPlayNetworking.registerGlobalReceiver(ADJUST_PERCENTAGE, (server, player, handler, buf, responseSender) -> {
+            int direction = buf.readInt();
+            server.execute(() -> {
+                QuirkSystem.QuirkData data = ((IQuirkDataAccessor) player).getQuirkData();
+                if (data.getQuirks().isEmpty()) return;
+
+                QuirkSystem.QuirkData.QuirkInstance instance = data.getQuirks().get(data.getSelectedQuirkIndex());
+
+                if ("plusultra:stockpile".equals(instance.quirkId)) {
+                    float maxPercent = instance.persistentData.getFloat("StockpilePercent");
+                    float currentSelected = instance.persistentData.contains("SelectedPercent") ?
+                            instance.persistentData.getFloat("SelectedPercent") : maxPercent;
+
+                    float change = direction * 5.0f;
+                    float newSelected = currentSelected + change;
+
+                    if (newSelected > maxPercent) newSelected = maxPercent;
+                    if (newSelected < 0.0f) newSelected = 0.0f;
+
+                    instance.persistentData.putFloat("SelectedPercent", newSelected);
+                    sync(player);
+                }
+            });
+        });
+
+        // NEW: Handle Destruction Toggle
+        ServerPlayNetworking.registerGlobalReceiver(TOGGLE_DESTRUCTION, (server, player, handler, buf, responseSender) -> {
+            server.execute(() -> {
+                QuirkSystem.QuirkData data = ((IQuirkDataAccessor) player).getQuirkData();
+                if (data.runtimeTags.containsKey("DESTRUCTION_DISABLED")) {
+                    data.runtimeTags.remove("DESTRUCTION_DISABLED");
+                    player.sendMessage(Text.of("§aDestruction Enabled"), true);
+                } else {
+                    data.runtimeTags.put("DESTRUCTION_DISABLED", "true");
+                    player.sendMessage(Text.of("§cDestruction Disabled"), true);
+                }
             });
         });
     }

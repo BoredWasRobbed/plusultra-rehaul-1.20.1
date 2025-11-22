@@ -22,8 +22,8 @@ public class SuperRegenerationQuirk extends QuirkSystem.Quirk {
 
                 if (isNowActive) {
                     data.runtimeTags.put("REGEN_ACTIVE", "true");
-                    // Display current power
-                    float power = getPowerMultiplier(instance.count);
+                    // UPDATED: Now passes 'data' for Meta scaling
+                    float power = getPowerMultiplier(instance.count, data);
                     if(entity instanceof PlayerEntity p) p.sendMessage(Text.of("§aRegeneration Active (Power: " + String.format("%.1fx", power) + ")"), true);
                 } else {
                     data.runtimeTags.remove("REGEN_ACTIVE");
@@ -43,10 +43,15 @@ public class SuperRegenerationQuirk extends QuirkSystem.Quirk {
             // 3 copies = 10 ticks
             int tickDelay = Math.max(5, 25 - (instance.count * 5));
 
+            // Apply Meta Scaling to speed/effectiveness
+            // Higher Meta -> Faster Regen? Or just more healing?
+            // For now let's just use standard heal logic but we could implement meta here.
+
             if (entity.age % tickDelay == 0) {
                 if (entity.getHealth() < entity.getMaxHealth()) {
                     if (data.currentStamina >= 5.0) {
-                        entity.heal(1.0f);
+                        float power = getPowerMultiplier(instance.count, data);
+                        entity.heal(power); // Heal scales with Meta now
                         data.currentStamina -= 5.0;
 
                         if (entity instanceof ServerPlayerEntity serverPlayer) {

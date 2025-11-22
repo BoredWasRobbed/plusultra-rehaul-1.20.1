@@ -6,7 +6,9 @@ import net.bored.client.QuirkHudOverlay;
 import net.bored.common.PlusUltraNetwork;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
+import net.fabricmc.fabric.api.client.rendering.v1.EntityRendererRegistry;
 import net.fabricmc.fabric.api.client.rendering.v1.HudRenderCallback;
+import net.minecraft.client.render.entity.EmptyEntityRenderer;
 import net.minecraft.nbt.NbtCompound;
 
 import java.util.ArrayList;
@@ -18,6 +20,9 @@ public class PlusUltraClient implements ClientModInitializer {
 		new PlusUltraClientHandlers().onInitializeClient();
 		HudRenderCallback.EVENT.register(new QuirkHudOverlay());
 
+		// Register Entity Renderer (Empty because it's just particles)
+		EntityRendererRegistry.register(PlusUltra.FLICK_PROJECTILE, EmptyEntityRenderer::new);
+
 		ClientPlayNetworking.registerGlobalReceiver(PlusUltraNetwork.SYNC_DATA, (client, handler, buf, responseSender) -> {
 			NbtCompound nbt = buf.readNbt();
 			client.execute(() -> {
@@ -27,7 +32,6 @@ public class PlusUltraClient implements ClientModInitializer {
 			});
 		});
 
-		// NEW: Receiver to open the Steal Selection Screen
 		ClientPlayNetworking.registerGlobalReceiver(PlusUltraNetwork.OPEN_STEAL_SELECTION, (client, handler, buf, responseSender) -> {
 			int targetId = buf.readInt();
 			int size = buf.readInt();
