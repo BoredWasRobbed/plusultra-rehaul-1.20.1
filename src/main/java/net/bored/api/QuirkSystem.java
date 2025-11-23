@@ -93,10 +93,33 @@ public class QuirkSystem {
             instance.cooldowns.put(this.name, this.cooldownMax);
         }
 
-        // NEW: Check if ability should be hidden from list/selection
+        // Check if ability should be hidden from list/selection
         public boolean isHidden(QuirkData data, QuirkData.QuirkInstance instance) {
             // Default behavior: Hide if level requirement not met
             return data.level < this.requiredLevel;
+        }
+
+        // --- AI METHODS ---
+
+        /**
+         * Determines if an AI mob should attempt to use this ability.
+         * @param user The mob using the ability.
+         * @param target The mob's current target (can be null).
+         * @param distanceSquared Distance to target squared (if target exists).
+         * @param data The mob's QuirkData.
+         * @param instance The specific QuirkInstance.
+         * @return True if the AI should activate this ability.
+         */
+        public boolean shouldAIUse(LivingEntity user, LivingEntity target, double distanceSquared, QuirkData data, QuirkData.QuirkInstance instance) {
+            return false;
+        }
+
+        /**
+         * Called when the AI activates the ability. By default, delegates to onActivate.
+         * Override if AI needs specific aiming logic (e.g., set look direction).
+         */
+        public void onAIUse(LivingEntity user, LivingEntity target, QuirkData data, QuirkData.QuirkInstance instance) {
+            this.onActivate(user, data, instance);
         }
 
         public String getName() { return name; }
@@ -284,7 +307,6 @@ public class QuirkSystem {
         public List<QuirkInstance> getQuirks() { return quirks; }
         public int getSelectedQuirkIndex() { return selectedQuirkIndex; }
 
-        // UPDATED: Reset ability index when switching quirks
         public void setSelectedQuirkIndex(int index) {
             this.selectedQuirkIndex = index;
             this.selectedAbilityIndex = 0;
@@ -299,7 +321,6 @@ public class QuirkSystem {
             int start = selectedAbilityIndex;
             int current = start;
 
-            // Safe loop to find next visible ability
             for(int i=0; i<max; i++) {
                 current = (current + direction) % max;
                 if (current < 0) current += max;

@@ -17,6 +17,13 @@ public class SuperRegenerationQuirk extends QuirkSystem.Quirk {
     public void registerAbilities() {
         this.addAbility(new QuirkSystem.Ability("Regeneration", QuirkSystem.AbilityType.TOGGLE, 20, 1, 0) {
             @Override
+            public boolean shouldAIUse(LivingEntity user, LivingEntity target, double distanceSquared, QuirkSystem.QuirkData data, QuirkSystem.QuirkData.QuirkInstance instance) {
+                boolean active = data.runtimeTags.containsKey("REGEN_ACTIVE");
+                if (!active && user.getHealth() < user.getMaxHealth() * 0.8) return true;
+                return false;
+            }
+
+            @Override
             public void onActivate(LivingEntity entity, QuirkSystem.QuirkData data, QuirkSystem.QuirkData.QuirkInstance instance) {
                 boolean isNowActive = !data.runtimeTags.containsKey("REGEN_ACTIVE");
 
@@ -36,6 +43,12 @@ public class SuperRegenerationQuirk extends QuirkSystem.Quirk {
     @Override
     public void onUpdate(LivingEntity entity, QuirkSystem.QuirkData data, QuirkSystem.QuirkData.QuirkInstance instance) {
         if (data.runtimeTags.containsKey("REGEN_ACTIVE")) {
+            // For AI, turn off if full health to save stamina
+            if (!(entity instanceof PlayerEntity) && entity.getHealth() >= entity.getMaxHealth()) {
+                data.runtimeTags.remove("REGEN_ACTIVE");
+                return;
+            }
+
             int tickDelay = Math.max(5, 25 - (instance.count * 5));
 
             if (entity.age % tickDelay == 0) {

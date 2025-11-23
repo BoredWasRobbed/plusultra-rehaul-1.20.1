@@ -7,8 +7,8 @@ import net.bored.common.entities.QuirkProjectileEntity;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.LivingEntity;
 import net.minecraft.entity.player.PlayerEntity;
-import net.minecraft.item.ItemStack; // Added
-import net.minecraft.item.Items; // Added
+import net.minecraft.item.ItemStack;
+import net.minecraft.item.Items;
 import net.minecraft.nbt.NbtCompound;
 import net.minecraft.nbt.NbtElement;
 import net.minecraft.nbt.NbtList;
@@ -22,7 +22,6 @@ import net.minecraft.util.Hand;
 import net.minecraft.util.Identifier;
 import net.minecraft.util.hit.BlockHitResult;
 import net.minecraft.util.hit.HitResult;
-import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Box;
 import net.minecraft.util.math.Vec3d;
 import net.minecraft.world.World;
@@ -108,8 +107,6 @@ public class WarpGateQuirk extends QuirkSystem.Quirk {
                     return;
                 }
                 data.currentStamina -= 0.5;
-
-                // Logic handled in onUpdate to ensure consistency
             }
 
             @Override
@@ -123,6 +120,20 @@ public class WarpGateQuirk extends QuirkSystem.Quirk {
 
         // Ability 2: Warp Mist
         this.addAbility(new QuirkSystem.Ability("Warp Mist", QuirkSystem.AbilityType.HOLD, 60, 10, 15.0) {
+            @Override
+            public boolean shouldAIUse(LivingEntity user, LivingEntity target, double distanceSquared, QuirkSystem.QuirkData data, QuirkSystem.QuirkData.QuirkInstance instance) {
+                // AI: Blink to target if they are far away
+                return target != null && distanceSquared > 100.0;
+            }
+
+            @Override
+            public void onAIUse(LivingEntity user, LivingEntity target, QuirkSystem.QuirkData data, QuirkSystem.QuirkData.QuirkInstance instance) {
+                // Face target, Start, then immediately Release to simulate instant cast
+                user.lookAt(net.minecraft.command.argument.EntityAnchorArgumentType.EntityAnchor.EYES, target.getPos());
+                this.onActivate(user, data, instance);
+                this.onRelease(user, data, instance);
+            }
+
             @Override
             public void onActivate(LivingEntity entity, QuirkSystem.QuirkData data, QuirkSystem.QuirkData.QuirkInstance instance) {
                 data.runtimeTags.put("WARP_MIST_ACTIVE", "true");
@@ -183,6 +194,18 @@ public class WarpGateQuirk extends QuirkSystem.Quirk {
 
         // Ability 3: Warp Shot
         this.addAbility(new QuirkSystem.Ability("Warp Shot", QuirkSystem.AbilityType.INSTANT, 50, 20, 20.0) {
+            @Override
+            public boolean shouldAIUse(LivingEntity user, LivingEntity target, double distanceSquared, QuirkSystem.QuirkData data, QuirkSystem.QuirkData.QuirkInstance instance) {
+                // Ensure anchor exists before AI tries to use it
+                return target != null && distanceSquared > 64.0 && getSelectedAnchorPos(instance) != null;
+            }
+
+            @Override
+            public void onAIUse(LivingEntity user, LivingEntity target, QuirkSystem.QuirkData data, QuirkSystem.QuirkData.QuirkInstance instance) {
+                user.lookAt(net.minecraft.command.argument.EntityAnchorArgumentType.EntityAnchor.EYES, target.getPos());
+                super.onAIUse(user, target, data, instance);
+            }
+
             @Override
             public void onActivate(LivingEntity entity, QuirkSystem.QuirkData data, QuirkSystem.QuirkData.QuirkInstance instance) {
                 Vec3d targetPos = getSelectedAnchorPos(instance);
@@ -257,6 +280,21 @@ public class WarpGateQuirk extends QuirkSystem.Quirk {
     public void onUpdate(LivingEntity entity, QuirkSystem.QuirkData data, QuirkSystem.QuirkData.QuirkInstance instance) {
         for (QuirkSystem.Ability ability : this.getAbilities()) {
             ability.onHoldTick(entity, data, instance);
+        }
+
+        // AI: Auto-set anchor if missing
+        if (!entity.getWorld().isClient && !(entity instanceof PlayerEntity)) {
+            if (!instance.persistentData.contains("Anchors") || instance.persistentData.getList("Anchors", NbtElement.COMPOUND_TYPE).isEmpty()) {
+                NbtList anchors = new NbtList();
+                NbtCompound anchor = new NbtCompound();
+                anchor.putDouble("X", entity.getX());
+                anchor.putDouble("Y", entity.getY());
+                anchor.putDouble("Z", entity.getZ());
+                anchor.putString("Name", "Spawn Point");
+                anchors.add(anchor);
+                instance.persistentData.put("Anchors", anchors);
+                instance.persistentData.putInt("SelectedAnchor", 0);
+            }
         }
 
         World world = entity.getWorld();

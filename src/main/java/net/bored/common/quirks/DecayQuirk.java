@@ -26,6 +26,7 @@ import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Box;
 import net.minecraft.util.math.Direction;
 import net.minecraft.util.math.Vec3d;
+import net.minecraft.world.GameRules;
 import net.minecraft.world.World;
 
 import java.util.HashSet;
@@ -44,6 +45,11 @@ public class DecayQuirk extends QuirkSystem.Quirk {
         // Ability 1: Decay Grip
         this.addAbility(new QuirkSystem.Ability("Decay Grip", QuirkSystem.AbilityType.HOLD, 100, 1, 5.0) {
             @Override
+            public boolean shouldAIUse(LivingEntity user, LivingEntity target, double distanceSquared, QuirkSystem.QuirkData data, QuirkSystem.QuirkData.QuirkInstance instance) {
+                return target != null && distanceSquared < 9.0;
+            }
+
+            @Override
             public void onActivate(LivingEntity entity, QuirkSystem.QuirkData data, QuirkSystem.QuirkData.QuirkInstance instance) {
                 data.runtimeTags.put("DECAY_GRIP_ACTIVE", "true");
                 entity.swingHand(Hand.MAIN_HAND, true);
@@ -60,6 +66,11 @@ public class DecayQuirk extends QuirkSystem.Quirk {
 
         // Ability 2: Ground Rot
         this.addAbility(new QuirkSystem.Ability("Ground Rot", QuirkSystem.AbilityType.HOLD, 150, 10, 10.0) {
+            @Override
+            public boolean shouldAIUse(LivingEntity user, LivingEntity target, double distanceSquared, QuirkSystem.QuirkData data, QuirkSystem.QuirkData.QuirkInstance instance) {
+                return instance.awakened && target != null && distanceSquared < 100.0 && distanceSquared > 16.0;
+            }
+
             @Override
             public boolean isHidden(QuirkSystem.QuirkData data, QuirkSystem.QuirkData.QuirkInstance instance) {
                 return super.isHidden(data, instance) || !instance.awakened;
@@ -115,6 +126,17 @@ public class DecayQuirk extends QuirkSystem.Quirk {
 
         // Ability 3: Dust Stream
         this.addAbility(new QuirkSystem.Ability("Dust Stream", QuirkSystem.AbilityType.HOLD, 100, 20, 8.0) {
+            @Override
+            public boolean shouldAIUse(LivingEntity user, LivingEntity target, double distanceSquared, QuirkSystem.QuirkData data, QuirkSystem.QuirkData.QuirkInstance instance) {
+                return instance.awakened && target != null && distanceSquared > 25.0 && distanceSquared < 400.0;
+            }
+
+            @Override
+            public void onAIUse(LivingEntity user, LivingEntity target, QuirkSystem.QuirkData data, QuirkSystem.QuirkData.QuirkInstance instance) {
+                user.lookAt(net.minecraft.command.argument.EntityAnchorArgumentType.EntityAnchor.EYES, target.getPos());
+                super.onAIUse(user, target, data, instance);
+            }
+
             @Override
             public boolean isHidden(QuirkSystem.QuirkData data, QuirkSystem.QuirkData.QuirkInstance instance) {
                 return super.isHidden(data, instance) || !instance.awakened;
@@ -192,6 +214,7 @@ public class DecayQuirk extends QuirkSystem.Quirk {
 
         boolean canDestroy = !PlusUltraConfig.get().disableQuirkDestruction;
         if (data.runtimeTags.containsKey("DESTRUCTION_DISABLED")) canDestroy = false;
+        if (!world.getGameRules().getBoolean(GameRules.DO_MOB_GRIEFING) && !(entity instanceof PlayerEntity)) canDestroy = false;
 
         // --- Ability 1: Decay Grip ---
         if (data.runtimeTags.containsKey("DECAY_GRIP_ACTIVE")) {

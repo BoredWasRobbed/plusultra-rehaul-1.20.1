@@ -20,11 +20,16 @@ public class PlusUltraConfig {
 
     // --- Config Options ---
     public boolean disableQuirkDestruction = false;
-    public boolean limitUniqueQuirks = true;
+    public boolean limitUniqueQuirks = true; // For OFA/AFO specifically
+    public boolean uniqueQuirks = false; // New: For ALL high-tier quirks
 
     // --- Mob Spawn Options ---
     public boolean mobsCanSpawnWithQuirks = true;
     public double mobQuirkChance = 0.05; // 5% chance by default
+
+    // --- Villager Spawn Options ---
+    public boolean villagersCanSpawnWithQuirks = true;
+    public double villagerQuirkChance = 0.20; // 20% chance by default
 
     // Using TreeMap to keep quirks sorted alphabetically in the file
     public Map<String, Boolean> enabledQuirks = new TreeMap<>();
@@ -47,9 +52,7 @@ public class PlusUltraConfig {
                 String line;
                 while ((line = reader.readLine()) != null) {
                     line = line.trim();
-                    // Skip comments and empty lines
                     if (line.isEmpty() || line.startsWith("#")) continue;
-                    // Skip section headers [Section]
                     if (line.startsWith("[") && line.endsWith("]")) continue;
 
                     String[] parts = line.split("=", 2);
@@ -57,7 +60,6 @@ public class PlusUltraConfig {
                         String key = parts[0].trim();
                         String value = parts[1].trim();
 
-                        // Remove quotes from keys if present (TOML requires quotes for colons)
                         if (key.startsWith("\"") && key.endsWith("\"")) {
                             key = key.substring(1, key.length() - 1);
                         }
@@ -66,6 +68,8 @@ public class PlusUltraConfig {
                             INSTANCE.disableQuirkDestruction = Boolean.parseBoolean(value);
                         } else if (key.equals("limitUniqueQuirks")) {
                             INSTANCE.limitUniqueQuirks = Boolean.parseBoolean(value);
+                        } else if (key.equals("uniqueQuirks")) {
+                            INSTANCE.uniqueQuirks = Boolean.parseBoolean(value);
                         } else if (key.equals("mobsCanSpawnWithQuirks")) {
                             INSTANCE.mobsCanSpawnWithQuirks = Boolean.parseBoolean(value);
                         } else if (key.equals("mobQuirkChance")) {
@@ -74,8 +78,15 @@ public class PlusUltraConfig {
                             } catch (NumberFormatException e) {
                                 INSTANCE.mobQuirkChance = 0.05;
                             }
+                        } else if (key.equals("villagersCanSpawnWithQuirks")) {
+                            INSTANCE.villagersCanSpawnWithQuirks = Boolean.parseBoolean(value);
+                        } else if (key.equals("villagerQuirkChance")) {
+                            try {
+                                INSTANCE.villagerQuirkChance = Double.parseDouble(value);
+                            } catch (NumberFormatException e) {
+                                INSTANCE.villagerQuirkChance = 0.20;
+                            }
                         } else {
-                            // Assume it's a quirk
                             INSTANCE.enabledQuirks.put(key, Boolean.parseBoolean(value));
                         }
                     }
@@ -91,8 +102,6 @@ public class PlusUltraConfig {
 
         for (Identifier id : QuirkRegistry.getKeys()) {
             String key = id.toString();
-
-            // Skip Bestowal (Internal logic handles it)
             if (key.equals("plusultra:quirk_bestowal")) continue;
 
             if (!enabledQuirks.containsKey(key)) {
@@ -120,21 +129,27 @@ public class PlusUltraConfig {
             writer.println("# If true, One For All and All For One can only be held by one player per world.");
             writer.println("limitUniqueQuirks = " + INSTANCE.limitUniqueQuirks);
             writer.println("");
+            writer.println("# If true, ALL quirks (except lower tier ones like Regen) can only be held by one entity per world.");
+            writer.println("uniqueQuirks = " + INSTANCE.uniqueQuirks);
+            writer.println("");
 
             writer.println("[Mob Spawning]");
-            writer.println("# If true, mobs can naturally spawn with quirks.");
+            writer.println("# If true, hostile monsters can naturally spawn with quirks.");
             writer.println("mobsCanSpawnWithQuirks = " + INSTANCE.mobsCanSpawnWithQuirks);
             writer.println("");
-            writer.println("# The chance (0.0 to 1.0) for a mob to spawn with a quirk. 0.05 = 5%.");
+            writer.println("# The chance (0.0 to 1.0) for a hostile mob to spawn with a quirk. 0.05 = 5%.");
             writer.println("mobQuirkChance = " + INSTANCE.mobQuirkChance);
+            writer.println("");
+            writer.println("# If true, villagers can naturally spawn with quirks.");
+            writer.println("villagersCanSpawnWithQuirks = " + INSTANCE.villagersCanSpawnWithQuirks);
+            writer.println("");
+            writer.println("# The chance (0.0 to 1.0) for a villager to spawn with a quirk. 0.20 = 20%.");
+            writer.println("villagerQuirkChance = " + INSTANCE.villagerQuirkChance);
             writer.println("");
 
             writer.println("[Quirks]");
             writer.println("# Set to 'false' to disable specific quirks.");
-            writer.println("# Note: Disabling One For All also disables Quirk Bestowal.");
-
             for (Map.Entry<String, Boolean> entry : INSTANCE.enabledQuirks.entrySet()) {
-                // In TOML, keys with colons must be quoted
                 String key = "\"" + entry.getKey() + "\"";
                 writer.println(key + " = " + entry.getValue());
             }

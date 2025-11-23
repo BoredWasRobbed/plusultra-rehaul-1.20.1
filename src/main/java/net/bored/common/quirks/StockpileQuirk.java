@@ -32,6 +32,11 @@ public class StockpileQuirk extends QuirkSystem.Quirk {
     public void registerAbilities() {
         this.addAbility(new QuirkSystem.Ability("Smash", QuirkSystem.AbilityType.INSTANT, 60, 1, 10.0) {
             @Override
+            public boolean shouldAIUse(LivingEntity user, LivingEntity target, double distanceSquared, QuirkSystem.QuirkData data, QuirkSystem.QuirkData.QuirkInstance instance) {
+                return target != null && distanceSquared < 16.0;
+            }
+
+            @Override
             public void onActivate(LivingEntity entity, QuirkSystem.QuirkData data, QuirkSystem.QuirkData.QuirkInstance instance) {
                 float maxStock = instance.persistentData.getFloat("StockpilePercent");
                 float tempSelected = instance.persistentData.contains("SelectedPercent") ?
@@ -54,6 +59,7 @@ public class StockpileQuirk extends QuirkSystem.Quirk {
                 if (entity.getWorld() instanceof ServerWorld world) {
                     boolean canDestroy = !PlusUltraConfig.get().disableQuirkDestruction;
                     if (data.runtimeTags.containsKey("DESTRUCTION_DISABLED")) canDestroy = false;
+                    if (!world.getGameRules().getBoolean(GameRules.DO_MOB_GRIEFING) && !(entity instanceof PlayerEntity)) canDestroy = false;
 
                     if (selectedStock >= 75.0f && canDestroy) {
                         BlockPos destCenter = new BlockPos((int)(entity.getX() + (rotation.x * 4.0)), (int)(entity.getY() + (rotation.y * 4.0)), (int)(entity.getZ() + (rotation.z * 4.0)));
@@ -97,7 +103,7 @@ public class StockpileQuirk extends QuirkSystem.Quirk {
                 );
 
                 entity.getWorld().getEntitiesByClass(LivingEntity.class, damageBox, e -> e != entity).forEach(e -> {
-                    e.damage(entity.getDamageSources().playerAttack((PlayerEntity)entity), damage);
+                    e.damage(entity.getDamageSources().mobAttack(entity), damage);
                     e.takeKnockback(1.0 + (selectedStock / 40.0), entity.getX() - e.getX(), entity.getZ() - e.getZ());
                 });
 
@@ -112,6 +118,17 @@ public class StockpileQuirk extends QuirkSystem.Quirk {
         });
 
         this.addAbility(new QuirkSystem.Ability("Leap", QuirkSystem.AbilityType.INSTANT, 40, 1, 15.0) {
+            @Override
+            public boolean shouldAIUse(LivingEntity user, LivingEntity target, double distanceSquared, QuirkSystem.QuirkData data, QuirkSystem.QuirkData.QuirkInstance instance) {
+                return target != null && distanceSquared > 64.0 && user.isOnGround();
+            }
+
+            @Override
+            public void onAIUse(LivingEntity user, LivingEntity target, QuirkSystem.QuirkData data, QuirkSystem.QuirkData.QuirkInstance instance) {
+                user.lookAt(net.minecraft.command.argument.EntityAnchorArgumentType.EntityAnchor.EYES, target.getPos());
+                super.onAIUse(user, target, data, instance);
+            }
+
             @Override
             public void onActivate(LivingEntity entity, QuirkSystem.QuirkData data, QuirkSystem.QuirkData.QuirkInstance instance) {
                 float maxStock = instance.persistentData.getFloat("StockpilePercent");
@@ -138,6 +155,7 @@ public class StockpileQuirk extends QuirkSystem.Quirk {
                 data.runtimeTags.put("STOCKPILE_LEAPING", "true");
                 data.runtimeTags.put("STOCKPILE_LEAP_Y", String.valueOf(entity.getY()));
                 data.runtimeTags.put("STOCKPILE_LEAP_PEAK", String.valueOf(entity.getY()));
+                data.runtimeTags.put("STOCKPILE_LEAP_GRACE", "true");
 
                 if (entity.getWorld() instanceof ServerWorld world) {
                     world.playSound(null, entity.getX(), entity.getY(), entity.getZ(),
@@ -160,6 +178,17 @@ public class StockpileQuirk extends QuirkSystem.Quirk {
 
         this.addAbility(new QuirkSystem.Ability("Flick", QuirkSystem.AbilityType.INSTANT, 30, 1, 20.0) {
             @Override
+            public boolean shouldAIUse(LivingEntity user, LivingEntity target, double distanceSquared, QuirkSystem.QuirkData data, QuirkSystem.QuirkData.QuirkInstance instance) {
+                return target != null && distanceSquared > 25.0 && distanceSquared < 400.0;
+            }
+
+            @Override
+            public void onAIUse(LivingEntity user, LivingEntity target, QuirkSystem.QuirkData data, QuirkSystem.QuirkData.QuirkInstance instance) {
+                user.lookAt(net.minecraft.command.argument.EntityAnchorArgumentType.EntityAnchor.EYES, target.getPos().add(0, target.getHeight() * 0.5, 0));
+                super.onAIUse(user, target, data, instance);
+            }
+
+            @Override
             public void onActivate(LivingEntity entity, QuirkSystem.QuirkData data, QuirkSystem.QuirkData.QuirkInstance instance) {
                 float maxStock = instance.persistentData.getFloat("StockpilePercent");
                 float tempSelected = instance.persistentData.contains("SelectedPercent") ?
@@ -173,7 +202,6 @@ public class StockpileQuirk extends QuirkSystem.Quirk {
                 entity.swingHand(Hand.MAIN_HAND, true);
 
                 if (!entity.getWorld().isClient) {
-                    // UPDATED: Use QuirkProjectileEntity with type 0 (Flick)
                     QuirkProjectileEntity proj = new QuirkProjectileEntity(entity.getWorld(), entity, selectedStock, damage, 0);
                     proj.setVelocity(entity, entity.getPitch(), entity.getYaw(), 0.0F, 3.0F, 1.0F);
                     entity.getWorld().spawnEntity(proj);
@@ -216,7 +244,11 @@ public class StockpileQuirk extends QuirkSystem.Quirk {
                 peakY = currentY;
             }
 
-            if (entity.isOnGround() && !data.runtimeTags.containsKey("STOCKPILE_LEAP_GRACE")) {
+            if (entity.isOnGround()) {
+                if (data.runtimeTags.containsKey("STOCKPILE_LEAP_GRACE")) {
+                    data.runtimeTags.remove("STOCKPILE_LEAP_GRACE");
+                }
+
                 if (peakY - currentY > 1.0) {
                     handleLanding(entity, peakY - currentY, data);
                     data.runtimeTags.remove("STOCKPILE_LEAPING");
@@ -296,6 +328,7 @@ public class StockpileQuirk extends QuirkSystem.Quirk {
         if (!(entity.getWorld() instanceof ServerWorld world)) return;
         boolean canDestroy = !PlusUltraConfig.get().disableQuirkDestruction;
         if (data.runtimeTags.containsKey("DESTRUCTION_DISABLED")) canDestroy = false;
+        if (!world.getGameRules().getBoolean(GameRules.DO_MOB_GRIEFING)) canDestroy = false;
 
         if (fallHeight > 4.0 && canDestroy) {
             int radius = (int) (fallHeight / 5.0);

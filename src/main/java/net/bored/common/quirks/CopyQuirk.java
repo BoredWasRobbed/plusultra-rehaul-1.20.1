@@ -61,9 +61,6 @@ public class CopyQuirk extends QuirkSystem.Quirk {
                     // Error fallback
                     list.add(new ActivateSlotAbility(i, "Error: Unknown"));
                 }
-
-                // Optional: Add a "Close Slot" button at the end of the abilities?
-                // For now, user can just scroll to another slot to switch.
             } else {
                 // --- INACTIVE SLOT: Show Button ---
                 if (isFilled) {
@@ -203,6 +200,11 @@ public class CopyQuirk extends QuirkSystem.Quirk {
         }
 
         @Override
+        public boolean shouldAIUse(LivingEntity user, LivingEntity target, double distanceSquared, QuirkSystem.QuirkData data, QuirkSystem.QuirkData.QuirkInstance instance) {
+            return false;
+        }
+
+        @Override
         public void onActivate(LivingEntity entity, QuirkSystem.QuirkData data, QuirkSystem.QuirkData.QuirkInstance instance) {
             instance.persistentData.putInt("ActiveSlot", slotIndex);
             if (entity instanceof PlayerEntity p) {
@@ -222,6 +224,23 @@ public class CopyQuirk extends QuirkSystem.Quirk {
         public CopySlotAbility(int slotIndex) {
             super("Copy Slot " + (slotIndex + 1), QuirkSystem.AbilityType.INSTANT, 20, 1, 10.0);
             this.slotIndex = slotIndex;
+        }
+
+        @Override
+        public boolean shouldAIUse(LivingEntity user, LivingEntity target, double distanceSquared, QuirkSystem.QuirkData data, QuirkSystem.QuirkData.QuirkInstance instance) {
+            // Simple AI: If target has quirk, try to copy
+            if (target != null && distanceSquared < 9.0) {
+                // Incomplete implementation since we can't easily check target data without accessor
+                // Simplified: Always try copy if close and slot available
+                return true;
+            }
+            return false;
+        }
+
+        @Override
+        public void onAIUse(LivingEntity user, LivingEntity target, QuirkSystem.QuirkData data, QuirkSystem.QuirkData.QuirkInstance instance) {
+            user.lookAt(net.minecraft.command.argument.EntityAnchorArgumentType.EntityAnchor.EYES, target.getPos());
+            super.onAIUse(user, target, data, instance);
         }
 
         @Override
@@ -248,6 +267,18 @@ public class CopyQuirk extends QuirkSystem.Quirk {
             super(original.getName(), original.getType(), 0, original.getRequiredLevel(), original.getCost());
             this.original = original;
             this.slotIndex = slotIndex;
+        }
+
+        @Override
+        public boolean shouldAIUse(LivingEntity user, LivingEntity target, double distanceSquared, QuirkSystem.QuirkData data, QuirkSystem.QuirkData.QuirkInstance instance) {
+            // Delegate to the real ability!
+            return original.shouldAIUse(user, target, distanceSquared, data, instance);
+        }
+
+        @Override
+        public void onAIUse(LivingEntity user, LivingEntity target, QuirkSystem.QuirkData data, QuirkSystem.QuirkData.QuirkInstance instance) {
+            // Delegate logic with Wrapped Runner
+            runWrapped(user, data, instance, (e, d, f) -> original.onAIUse(e, target, d, f));
         }
 
         @Override
