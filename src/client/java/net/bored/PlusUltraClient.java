@@ -1,6 +1,7 @@
 package net.bored;
 
 import net.bored.api.IQuirkDataAccessor;
+import net.bored.client.AFOHudOverlay; // Added Import
 import net.bored.client.PlusUltraClientHandlers;
 import net.bored.client.QuirkHudOverlay;
 import net.bored.common.PlusUltraNetwork;
@@ -23,18 +24,21 @@ import java.util.Iterator;
 
 public class PlusUltraClient implements ClientModInitializer {
 
-	// NEW: Cache for packets that arrive before the entity spawns
 	private static final Map<Integer, NbtCompound> pendingSyncs = new HashMap<>();
 	private static final Map<Integer, Long> pendingSyncTimestamps = new HashMap<>();
 
 	@Override
 	public void onInitializeClient() {
 		new PlusUltraClientHandlers().onInitializeClient();
+
+		// Register Standard Overlay
 		HudRenderCallback.EVENT.register(new QuirkHudOverlay());
+
+		// Register NEW AFO Sight Overlay
+		HudRenderCallback.EVENT.register(new AFOHudOverlay());
 
 		EntityRendererRegistry.register(PlusUltra.FLICK_PROJECTILE, EmptyEntityRenderer::new);
 
-		// UPDATED: Sync Receiver with Caching Logic
 		ClientPlayNetworking.registerGlobalReceiver(PlusUltraNetwork.SYNC_DATA, (client, handler, buf, responseSender) -> {
 			int entityId = buf.readInt();
 			NbtCompound nbt = buf.readNbt();
@@ -45,7 +49,6 @@ public class PlusUltraClient implements ClientModInitializer {
 					if (entity instanceof LivingEntity living) {
 						((IQuirkDataAccessor)living).getQuirkData().readFromNbt(nbt);
 					} else {
-						// Entity not found yet (Packet arrived before Spawn), cache it
 						pendingSyncs.put(entityId, nbt);
 						pendingSyncTimestamps.put(entityId, System.currentTimeMillis());
 					}
@@ -66,7 +69,6 @@ public class PlusUltraClient implements ClientModInitializer {
 			});
 		});
 
-		// NEW: Process pending syncs
 		ClientTickEvents.END_CLIENT_TICK.register(client -> {
 			if (client.world == null) {
 				pendingSyncs.clear();
@@ -84,12 +86,10 @@ public class PlusUltraClient implements ClientModInitializer {
 					Entity entity = client.world.getEntityById(id);
 
 					if (entity instanceof LivingEntity living) {
-						// Entity found! Apply data.
 						((IQuirkDataAccessor)living).getQuirkData().readFromNbt(entry.getValue());
 						it.remove();
 						pendingSyncTimestamps.remove(id);
 					} else {
-						// Timeout after 5 seconds to prevent memory leaks
 						if (now - pendingSyncTimestamps.getOrDefault(id, 0L) > 5000) {
 							it.remove();
 							pendingSyncTimestamps.remove(id);
@@ -99,7 +99,6 @@ public class PlusUltraClient implements ClientModInitializer {
 			}
 		});
 
-		// Rendering Tick
 		ClientTickEvents.END_WORLD_TICK.register(world -> {
 			if (!PlusUltraClientHandlers.afoSightActive) return;
 
@@ -107,11 +106,9 @@ public class PlusUltraClient implements ClientModInitializer {
 				if (entity instanceof LivingEntity living) {
 					if (entity == net.minecraft.client.MinecraftClient.getInstance().player) continue;
 
-					// Check if data is present
 					if (((IQuirkDataAccessor)living).getQuirkData().getQuirks().size() > 0) {
 						if (world.getRandom().nextFloat() < 0.15f) {
 							double x = entity.getX() + (world.getRandom().nextDouble() - 0.5);
-							// Spawn slightly higher so it's more visible above their head
 							double y = entity.getY() + entity.getHeight() + (world.getRandom().nextDouble() * 0.5);
 							double z = entity.getZ() + (world.getRandom().nextDouble() - 0.5);
 

@@ -59,7 +59,6 @@ public class QuirkAttackHandler {
     private static void handleOFATransfer(PlayerEntity attacker, QuirkSystem.QuirkData attackerData, LivingEntity target, QuirkSystem.QuirkData targetData) {
         QuirkSystem.QuirkData.QuirkInstance activeOFA = null;
 
-        // Find either the Bestowal quirk (Gen 0) OR One For All (Gen 1+)
         for (QuirkSystem.QuirkData.QuirkInstance qi : attackerData.getQuirks()) {
             if ("plusultra:one_for_all".equals(qi.quirkId) || "plusultra:quirk_bestowal".equals(qi.quirkId)) {
                 activeOFA = qi;
@@ -74,78 +73,56 @@ public class QuirkAttackHandler {
 
         int currentGen = activeOFA.persistentData.getInt("Generation");
 
-        // 1. Stop transferal once it hits the ninth user.
         if (currentGen >= 9) {
             attacker.sendMessage(Text.of("§6The power has reached its peak. One For All cannot be transferred further."), true);
             return;
         }
 
-        // Identify what the "Core" quirk inside OFA is
         String firstUserQuirkId = activeOFA.persistentData.getString("FirstQuirk");
         int newGen = currentGen + 1;
 
-        // --- FUSION LOGIC (Gen 0 -> Gen 1) ---
         if (currentGen == 0) {
             newGen = 1;
-            // If Target has a quirk, THAT becomes the fused "FirstQuirk"
-            // We merge Bestowal (Attacker) + TargetQuirk (Target) -> One For All (Target)
             if (!targetData.getQuirks().isEmpty()) {
                 QuirkSystem.QuirkData.QuirkInstance targetExisting = targetData.getQuirks().get(0);
                 firstUserQuirkId = targetExisting.quirkId;
-
-                // Remove the target's existing quirk because it's being merged into OFA
-                // We do this by clearing target quirks before adding OFA
                 targetData.getQuirks().clear();
                 attacker.sendMessage(Text.of("§eFusing Bestowal with " + getFormalName(firstUserQuirkId) + "..."), false);
             } else {
-                // Quirkless 1st user scenario (unlikely in lore but possible here)
                 firstUserQuirkId = "";
             }
         }
 
-        // --- TRANSFER LOGIC ---
-        // Copy all OTHER quirks the attacker has (Past Users)
         List<QuirkSystem.QuirkData.QuirkInstance> quirksToMove = new ArrayList<>();
         for(QuirkSystem.QuirkData.QuirkInstance qi : attackerData.getQuirks()) {
-            // Don't copy the old OFA/Bestowal instance directly, we create a NEW one for the target
             if (!qi.quirkId.equals(activeOFA.quirkId)) {
                 quirksToMove.add(qi);
             }
         }
 
-        // 1. Clear Attacker
         attackerData.getQuirks().clear();
         attackerData.setSelectedQuirkIndex(0);
 
-        // 2. Create NEW One For All Instance for Target
-        // This handles the ID change: It is ALWAYS "one_for_all" on the target.
         QuirkSystem.QuirkData.QuirkInstance newOFA = new QuirkSystem.QuirkData.QuirkInstance("plusultra:one_for_all");
         newOFA.persistentData.putInt("Generation", newGen);
         if (firstUserQuirkId != null && !firstUserQuirkId.isEmpty()) {
             newOFA.persistentData.putString("FirstQuirk", firstUserQuirkId);
         }
-        // Transfer Stockpile Data if it existed
         if (activeOFA.persistentData.contains("StockpilePercent")) {
             newOFA.persistentData.putFloat("StockpilePercent", activeOFA.persistentData.getFloat("StockpilePercent"));
         }
         newOFA.isLocked = false;
         targetData.getQuirks().add(newOFA);
 
-        // 3. Add Past User Quirks
         for (QuirkSystem.QuirkData.QuirkInstance qi : quirksToMove) {
-            // Clone the instance to prevent reference issues
             QuirkSystem.QuirkData.QuirkInstance clone = new QuirkSystem.QuirkData.QuirkInstance(qi.quirkId);
             clone.innate = false;
             clone.count = qi.count;
             clone.persistentData = qi.persistentData.copy();
-
-            // Lock inherited quirks until Gen 9
             clone.isLocked = true;
-
             targetData.getQuirks().add(clone);
         }
 
-        // 4. Notify & Sync
         attacker.sendMessage(Text.of("§eYou have passed on the torch."), true);
         if (target instanceof PlayerEntity tp) {
             String mergedName = (firstUserQuirkId != null && !firstUserQuirkId.isEmpty()) ? getFormalName(firstUserQuirkId) : "Power";
@@ -153,8 +130,9 @@ public class QuirkAttackHandler {
             if (newGen == 1) tp.sendMessage(Text.of("§7Bestowal has merged with " + mergedName + "."), false);
         }
 
-        if (attacker instanceof ServerPlayerEntity sa) PlusUltraNetwork.sync(sa);
-        if (target instanceof ServerPlayerEntity st) PlusUltraNetwork.sync(st);
+        // FIXED: Now syncs properly regardless of if target is player or mob
+        PlusUltraNetwork.sync(attacker);
+        PlusUltraNetwork.sync(target);
     }
 
     private static void handleSteal(PlayerEntity attacker, QuirkSystem.QuirkData attackerData, LivingEntity target, QuirkSystem.QuirkData targetData) {
@@ -163,16 +141,14 @@ public class QuirkAttackHandler {
             return;
         }
 
-        if (targetData.getQuirks().size() > 1) {
-            if (attacker instanceof ServerPlayerEntity serverAttacker) {
-                PacketByteBuf buf = PacketByteBufs.create();
-                buf.writeInt(target.getId());
-                buf.writeInt(targetData.getQuirks().size());
-                for (QuirkSystem.QuirkData.QuirkInstance qi : targetData.getQuirks()) {
-                    buf.writeString(qi.quirkId);
-                }
-                ServerPlayNetworking.send(serverAttacker, PlusUltraNetwork.OPEN_STEAL_SELECTION, buf);
+        if (targetData.getQuirks().size() > 1 && attacker instanceof ServerPlayerEntity serverAttacker) {
+            PacketByteBuf buf = PacketByteBufs.create();
+            buf.writeInt(target.getId());
+            buf.writeInt(targetData.getQuirks().size());
+            for (QuirkSystem.QuirkData.QuirkInstance qi : targetData.getQuirks()) {
+                buf.writeString(qi.quirkId);
             }
+            ServerPlayNetworking.send(serverAttacker, PlusUltraNetwork.OPEN_STEAL_SELECTION, buf);
             return;
         }
 
@@ -194,8 +170,9 @@ public class QuirkAttackHandler {
             tp.sendMessage(Text.of("§4Your quirk " + quirkName + " was stolen!"), true);
         }
 
-        if (attacker instanceof ServerPlayerEntity serverAttacker) PlusUltraNetwork.sync(serverAttacker);
-        if (target instanceof ServerPlayerEntity serverTarget) PlusUltraNetwork.sync(serverTarget);
+        // FIXED: Now syncs properly regardless of if target is player or mob
+        PlusUltraNetwork.sync(attacker);
+        PlusUltraNetwork.sync(target);
     }
 
     private static void handleGive(PlayerEntity attacker, QuirkSystem.QuirkData attackerData, LivingEntity target, QuirkSystem.QuirkData targetData) {
@@ -230,8 +207,9 @@ public class QuirkAttackHandler {
             tp.sendMessage(Text.of("§bYou received " + quirkName + "!"), true);
         }
 
-        if (attacker instanceof ServerPlayerEntity serverAttacker) PlusUltraNetwork.sync(serverAttacker);
-        if (target instanceof ServerPlayerEntity serverTarget) PlusUltraNetwork.sync(serverTarget);
+        // FIXED: Now syncs properly regardless of if target is player or mob
+        PlusUltraNetwork.sync(attacker);
+        PlusUltraNetwork.sync(target);
     }
 
     private static String getFormalName(String quirkId) {
