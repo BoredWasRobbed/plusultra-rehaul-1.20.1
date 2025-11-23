@@ -1,7 +1,7 @@
 package net.bored;
 
 import net.bored.api.IQuirkDataAccessor;
-import net.bored.client.AFOHudOverlay; // Added Import
+import net.bored.client.AFOHudOverlay;
 import net.bored.client.PlusUltraClientHandlers;
 import net.bored.client.QuirkHudOverlay;
 import net.bored.common.PlusUltraNetwork;
@@ -31,13 +31,11 @@ public class PlusUltraClient implements ClientModInitializer {
 	public void onInitializeClient() {
 		new PlusUltraClientHandlers().onInitializeClient();
 
-		// Register Standard Overlay
 		HudRenderCallback.EVENT.register(new QuirkHudOverlay());
-
-		// Register NEW AFO Sight Overlay
 		HudRenderCallback.EVENT.register(new AFOHudOverlay());
 
-		EntityRendererRegistry.register(PlusUltra.FLICK_PROJECTILE, EmptyEntityRenderer::new);
+		// Updated for generic projectile
+		EntityRendererRegistry.register(PlusUltra.QUIRK_PROJECTILE, EmptyEntityRenderer::new);
 
 		ClientPlayNetworking.registerGlobalReceiver(PlusUltraNetwork.SYNC_DATA, (client, handler, buf, responseSender) -> {
 			int entityId = buf.readInt();
@@ -101,17 +99,14 @@ public class PlusUltraClient implements ClientModInitializer {
 
 		ClientTickEvents.END_WORLD_TICK.register(world -> {
 			if (!PlusUltraClientHandlers.afoSightActive) return;
-
 			for (Entity entity : world.getEntities()) {
 				if (entity instanceof LivingEntity living) {
 					if (entity == net.minecraft.client.MinecraftClient.getInstance().player) continue;
-
 					if (((IQuirkDataAccessor)living).getQuirkData().getQuirks().size() > 0) {
 						if (world.getRandom().nextFloat() < 0.15f) {
 							double x = entity.getX() + (world.getRandom().nextDouble() - 0.5);
 							double y = entity.getY() + entity.getHeight() + (world.getRandom().nextDouble() * 0.5);
 							double z = entity.getZ() + (world.getRandom().nextDouble() - 0.5);
-
 							world.addParticle(ParticleTypes.WITCH, x, y, z, 0, 0.05, 0);
 						}
 					}

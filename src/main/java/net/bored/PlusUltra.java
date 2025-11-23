@@ -6,12 +6,11 @@ import net.bored.common.PlusUltraCommands;
 import net.bored.common.PlusUltraNetwork;
 import net.bored.common.QuirkAttackHandler;
 import net.bored.common.QuirkRegistry;
-import net.bored.common.UniqueQuirkState;
-import net.bored.common.entities.FlickProjectileEntity;
+import net.bored.common.entities.QuirkProjectileEntity;
 import net.bored.config.PlusUltraConfig;
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.entity.event.v1.ServerPlayerEvents;
-import net.fabricmc.fabric.api.networking.v1.EntityTrackingEvents; // NEW
+import net.fabricmc.fabric.api.networking.v1.EntityTrackingEvents;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents;
 import net.fabricmc.fabric.api.object.builder.v1.entity.FabricEntityTypeBuilder;
 import net.minecraft.entity.EntityDimensions;
@@ -22,7 +21,6 @@ import net.minecraft.nbt.NbtCompound;
 import net.minecraft.registry.Registries;
 import net.minecraft.registry.Registry;
 import net.minecraft.server.network.ServerPlayerEntity;
-import net.minecraft.server.world.ServerWorld;
 import net.minecraft.text.Text;
 import net.minecraft.util.Identifier;
 
@@ -33,10 +31,11 @@ import java.util.Random;
 public class PlusUltra implements ModInitializer {
 	public static final String MOD_ID = "plusultra";
 
-	public static final EntityType<FlickProjectileEntity> FLICK_PROJECTILE = Registry.register(
+	// RENAMED / UPDATED
+	public static final EntityType<QuirkProjectileEntity> QUIRK_PROJECTILE = Registry.register(
 			Registries.ENTITY_TYPE,
-			new Identifier(MOD_ID, "flick_projectile"),
-			FabricEntityTypeBuilder.<FlickProjectileEntity>create(SpawnGroup.MISC, FlickProjectileEntity::new)
+			new Identifier(MOD_ID, "flick_projectile"), // Keep ID string to avoid breaking saves/commands if possible
+			FabricEntityTypeBuilder.<QuirkProjectileEntity>create(SpawnGroup.MISC, QuirkProjectileEntity::new)
 					.dimensions(EntityDimensions.fixed(0.5f, 0.5f))
 					.trackRangeBlocks(64).trackedUpdateRate(10)
 					.build()
@@ -53,7 +52,6 @@ public class PlusUltra implements ModInitializer {
 		PlusUltraCommands.register();
 		QuirkAttackHandler.register();
 
-		// Player Join Sync
 		ServerPlayConnectionEvents.JOIN.register((handler, sender, server) -> {
 			ServerPlayerEntity player = handler.player;
 			IQuirkDataAccessor accessor = (IQuirkDataAccessor) player;
@@ -76,7 +74,6 @@ public class PlusUltra implements ModInitializer {
 			newAccessor.getQuirkData().readFromNbt(nbt);
 		});
 
-		// NEW: When a player starts seeing a mob (tracking), send that mob's data to the player.
 		EntityTrackingEvents.START_TRACKING.register((trackedEntity, player) -> {
 			if (trackedEntity instanceof LivingEntity living) {
 				PlusUltraNetwork.syncToPlayer(living, player);
@@ -92,7 +89,6 @@ public class PlusUltra implements ModInitializer {
 			String idStr = id.toString();
 
 			if (!config.isQuirkEnabled(idStr)) continue;
-
 			if (idStr.equals("plusultra:one_for_all") || idStr.equals("plusultra:all_for_one")) continue;
 			if (idStr.equals("plusultra:quirk_bestowal")) continue;
 

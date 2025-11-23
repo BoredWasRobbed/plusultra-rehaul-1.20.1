@@ -2,7 +2,7 @@ package net.bored.common.quirks;
 
 import net.bored.api.QuirkSystem;
 import net.bored.common.PlusUltraNetwork;
-import net.bored.common.entities.FlickProjectileEntity;
+import net.bored.common.entities.QuirkProjectileEntity;
 import net.bored.config.PlusUltraConfig;
 import net.minecraft.block.BlockState;
 import net.minecraft.entity.LivingEntity;
@@ -173,7 +173,8 @@ public class StockpileQuirk extends QuirkSystem.Quirk {
                 entity.swingHand(Hand.MAIN_HAND, true);
 
                 if (!entity.getWorld().isClient) {
-                    FlickProjectileEntity proj = new FlickProjectileEntity(entity.getWorld(), entity, selectedStock, damage);
+                    // UPDATED: Use QuirkProjectileEntity with type 0 (Flick)
+                    QuirkProjectileEntity proj = new QuirkProjectileEntity(entity.getWorld(), entity, selectedStock, damage, 0);
                     proj.setVelocity(entity, entity.getPitch(), entity.getYaw(), 0.0F, 3.0F, 1.0F);
                     entity.getWorld().spawnEntity(proj);
 

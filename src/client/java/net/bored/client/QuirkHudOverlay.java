@@ -7,6 +7,9 @@ import net.fabricmc.fabric.api.client.rendering.v1.HudRenderCallback;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.font.TextRenderer;
 import net.minecraft.client.gui.DrawContext;
+import net.minecraft.nbt.NbtCompound;
+import net.minecraft.nbt.NbtList;
+import net.minecraft.nbt.NbtElement;
 import net.minecraft.util.Identifier;
 import java.util.List;
 
@@ -49,17 +52,21 @@ public class QuirkHudOverlay implements HudRenderCallback {
         int height = context.getScaledWindowHeight();
         TextRenderer font = client.textRenderer;
 
+        // Stockpile Bar
         boolean showStockpile = "plusultra:stockpile".equals(currentQuirkInstance.quirkId);
-
         if ("plusultra:one_for_all".equals(currentQuirkInstance.quirkId)) {
             if (currentQuirkInstance.persistentData.contains("FirstQuirk") &&
                     "plusultra:stockpile".equals(currentQuirkInstance.persistentData.getString("FirstQuirk"))) {
                 showStockpile = true;
             }
         }
-
         if (showStockpile) {
             renderStockpileBar(context, font, height, currentQuirkInstance);
+        }
+
+        // Warp Gate Info
+        if ("plusultra:warp_gate".equals(currentQuirkInstance.quirkId)) {
+            renderWarpInfo(context, font, height, currentQuirkInstance);
         }
 
         int x = width - BAR_WIDTH - PADDING;
@@ -73,7 +80,7 @@ public class QuirkHudOverlay implements HudRenderCallback {
         context.fill(x, y, rightEdge, y + BAR_HEIGHT, BACKGROUND_COLOR);
         int totalFillWidth = (int) ((currentStamina / maxStamina) * BAR_WIDTH);
         if (totalFillWidth > BAR_WIDTH) totalFillWidth = BAR_WIDTH;
-        int barColor = currentQuirkInstance.awakened ? AWAKENED_STAMINA_COLOR : STAMINA_COLOR;
+        int barColor = currentQuirkInstance.awakened ? AWAKENED_STAMINA_COLOR : realQuirk.getIconColor();
         context.fill(x, y, x + totalFillWidth, y + BAR_HEIGHT, barColor);
 
         context.drawText(font, "Stamina", x, y - 10, 0xFFFFFF, true);
@@ -89,19 +96,17 @@ public class QuirkHudOverlay implements HudRenderCallback {
             if (i >= abilities.size()) continue;
 
             QuirkSystem.Ability ability = abilities.get(i);
-
-            // NEW: Check if hidden
             if (ability.isHidden(data, currentQuirkInstance)) continue;
 
             boolean isSelected = (i == selectedSlot);
-            boolean isLocked = instanceIsLocked(currentQuirkInstance) || data.level < ability.getRequiredLevel();
+            boolean isLocked = currentQuirkInstance.isLocked || data.level < ability.getRequiredLevel();
             boolean onCooldown = ability.getCurrentCooldown(currentQuirkInstance) > 0;
 
             String displayText = ability.getName();
             int textColor;
 
             if (isLocked) {
-                if (instanceIsLocked(currentQuirkInstance)) displayText += " (LOCKED)";
+                if (currentQuirkInstance.isLocked) displayText += " (LOCKED)";
                 else displayText += " (Lvl " + ability.getRequiredLevel() + ")";
                 textColor = LOCKED_COLOR;
             } else {
@@ -123,18 +128,14 @@ public class QuirkHudOverlay implements HudRenderCallback {
         int headerY = currentY - 3;
         String quirkDisplayName = realQuirk.getId().getPath().replace("_", " ");
 
-        if ("plusultra:one_for_all".equals(currentQuirkInstance.quirkId)) {
-            quirkDisplayName = "One For All";
-        } else {
-            StringBuilder sb = new StringBuilder();
-            for (String s : quirkDisplayName.split(" ")) {
-                if (!s.isEmpty()) sb.append(Character.toUpperCase(s.charAt(0))).append(s.substring(1).toLowerCase()).append(" ");
-            }
-            quirkDisplayName = sb.toString().trim();
+        StringBuilder sb = new StringBuilder();
+        for (String s : quirkDisplayName.split(" ")) {
+            if (!s.isEmpty()) sb.append(Character.toUpperCase(s.charAt(0))).append(s.substring(1).toLowerCase()).append(" ");
         }
+        quirkDisplayName = sb.toString().trim();
 
         int nameColor = 0xFFFFFF;
-        if (instanceIsLocked(currentQuirkInstance)) {
+        if (currentQuirkInstance.isLocked) {
             quirkDisplayName = "§7[LOCKED] " + quirkDisplayName;
             nameColor = 0xFFAAAAAA;
         } else if (currentQuirkInstance.awakened) {
@@ -144,6 +145,7 @@ public class QuirkHudOverlay implements HudRenderCallback {
 
         context.drawText(font, quirkDisplayName, rightEdge - font.getWidth(quirkDisplayName), headerY, nameColor, true);
 
+        // RESTORED LEVEL AND XP BAR
         if ("plusultra:one_for_all".equals(currentQuirkInstance.quirkId)) {
             int gen = currentQuirkInstance.persistentData.getInt("Generation");
             if (gen > 0) {
@@ -164,10 +166,6 @@ public class QuirkHudOverlay implements HudRenderCallback {
         float currentXp = data.experience;
         int xpFill = (int) ((currentXp / maxXp) * xpBarWidth);
         context.fill(xpBarX, levelY + 4, xpBarX + xpFill, levelY + 5, XP_COLOR);
-    }
-
-    private boolean instanceIsLocked(QuirkSystem.QuirkData.QuirkInstance instance) {
-        return instance.isLocked;
     }
 
     private void renderStockpileBar(DrawContext context, TextRenderer font, int screenHeight, QuirkSystem.QuirkData.QuirkInstance instance) {
@@ -194,8 +192,30 @@ public class QuirkHudOverlay implements HudRenderCallback {
         int textX = x + (barWidth / 2) - (textWidth / 2);
         context.drawTextWithShadow(font, percentText, textX, y - 10, 0xFFFFFFFF);
 
+        // RESTORED PWR TEXT
         int powerWidth = font.getWidth("PWR");
         int powerX = x + (barWidth / 2) - (powerWidth / 2);
         context.drawTextWithShadow(font, "PWR", powerX, y + barHeight + 4, 0xFFFFAA00);
+    }
+
+    private void renderWarpInfo(DrawContext context, TextRenderer font, int screenHeight, QuirkSystem.QuirkData.QuirkInstance instance) {
+        if (!instance.persistentData.contains("Anchors")) return;
+        NbtList anchors = instance.persistentData.getList("Anchors", NbtElement.COMPOUND_TYPE);
+        if (anchors.isEmpty()) return;
+
+        int selected = instance.persistentData.getInt("SelectedAnchor");
+        if (selected < 0 || selected >= anchors.size()) selected = 0;
+
+        NbtCompound tag = anchors.getCompound(selected);
+        String name = tag.getString("Name");
+        String coords = String.format("[%.0f, %.0f, %.0f]", tag.getDouble("X"), tag.getDouble("Y"), tag.getDouble("Z"));
+
+        int y = (screenHeight / 2) + 20;
+        int x = 10;
+
+        context.drawTextWithShadow(font, "Selected Anchor:", x, y, 0xFFAA00);
+        context.drawTextWithShadow(font, name, x, y + 10, 0xFF55FF);
+        context.drawTextWithShadow(font, coords, x, y + 20, 0xAAAAAA);
+        context.drawTextWithShadow(font, "(G + Scroll to Cycle)", x, y + 35, 0x777777);
     }
 }

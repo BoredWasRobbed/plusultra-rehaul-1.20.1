@@ -8,6 +8,8 @@ import net.fabricmc.fabric.api.networking.v1.PlayerLookup;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.LivingEntity;
 import net.minecraft.nbt.NbtCompound;
+import net.minecraft.nbt.NbtList;
+import net.minecraft.nbt.NbtElement;
 import net.minecraft.network.PacketByteBuf;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.text.Text;
@@ -120,7 +122,6 @@ public class PlusUltraNetwork {
                 QuirkSystem.Quirk quirk = QuirkRegistry.get(new Identifier(instance.quirkId));
 
                 if (quirk != null) {
-                    // UPDATED: Pass abilities list and instance to cycleAbility
                     List<QuirkSystem.Ability> abilities = quirk.getAbilities(instance);
                     data.cycleAbility(direction, abilities, instance);
                     sync(player);
@@ -132,7 +133,6 @@ public class PlusUltraNetwork {
             int index = buf.readInt();
             server.execute(() -> {
                 ((IQuirkDataAccessor)player).getQuirkData().setSelectedQuirkIndex(index);
-                // FIXED: Use the setter method instead of direct access
                 ((IQuirkDataAccessor)player).getQuirkData().setSelectedAbilityIndex(0);
                 sync(player);
             });
@@ -205,6 +205,22 @@ public class PlusUltraNetwork {
                     if (newSelected < 0.0f) newSelected = 0.0f;
                     instance.persistentData.putFloat("SelectedPercent", newSelected);
                     sync(player);
+                }
+                else if ("plusultra:warp_gate".equals(instance.quirkId)) {
+                    // Warp Gate Anchor Cycling
+                    if (instance.persistentData.contains("Anchors")) {
+                        NbtList anchors = instance.persistentData.getList("Anchors", NbtElement.COMPOUND_TYPE);
+                        if (!anchors.isEmpty()) {
+                            int current = instance.persistentData.getInt("SelectedAnchor");
+                            int next = (current + direction) % anchors.size();
+                            if (next < 0) next += anchors.size();
+                            instance.persistentData.putInt("SelectedAnchor", next);
+
+                            NbtCompound tag = anchors.getCompound(next);
+                            player.sendMessage(Text.of("§5Selected Anchor: " + tag.getString("Name")), true);
+                            sync(player);
+                        }
+                    }
                 }
             });
         });

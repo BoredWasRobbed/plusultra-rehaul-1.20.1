@@ -25,15 +25,16 @@ public class MouseScrollHandler {
             }
         }
 
-        // NEW: Quirk Special Adjustment (G Key)
+        // Quirk Special Adjustment (G Key)
         if (PlusUltraClientHandlers.specialKey.isPressed()) {
             QuirkSystem.QuirkData data = ((IQuirkDataAccessor)client.player).getQuirkData();
             if (!data.getQuirks().isEmpty()) {
                 QuirkSystem.QuirkData.QuirkInstance active = data.getQuirks().get(data.getSelectedQuirkIndex());
-                // Check if active quirk is Stockpile (only one that supports adjustment currently)
-                if ("plusultra:stockpile".equals(active.quirkId)) {
+
+                // Allow scrolling for Stockpile (Percent) AND Warp Gate (Anchors)
+                if ("plusultra:stockpile".equals(active.quirkId) || "plusultra:warp_gate".equals(active.quirkId)) {
                     if (vertical != 0) {
-                        int direction = (vertical > 0) ? 1 : -1; // Up increases, Down decreases
+                        int direction = (vertical > 0) ? 1 : -1;
                         PacketByteBuf buf = PacketByteBufs.create();
                         buf.writeInt(direction);
                         ClientPlayNetworking.send(PlusUltraNetwork.ADJUST_PERCENTAGE, buf);

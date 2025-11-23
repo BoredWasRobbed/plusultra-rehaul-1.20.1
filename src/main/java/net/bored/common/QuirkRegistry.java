@@ -1,11 +1,7 @@
 package net.bored.common;
 
 import net.bored.api.QuirkSystem;
-import net.bored.common.quirks.AllForOneQuirk;
-import net.bored.common.quirks.DecayQuirk;
-import net.bored.common.quirks.OneForAllQuirk;
-import net.bored.common.quirks.SuperRegenerationQuirk;
-import net.bored.common.quirks.StockpileQuirk;
+import net.bored.common.quirks.*;
 import net.minecraft.util.Identifier;
 import java.util.HashMap;
 import java.util.Map;
@@ -20,6 +16,7 @@ public class QuirkRegistry {
         register(new StockpileQuirk());
         register(new OneForAllQuirk());
         register(new DecayQuirk());
+        register(new WarpGateQuirk());
     }
 
     public static void register(QuirkSystem.Quirk quirk) {
