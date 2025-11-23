@@ -6,6 +6,7 @@ import net.bored.api.QuirkSystem;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.fabricmc.fabric.api.networking.v1.PacketByteBufs;
 import net.minecraft.client.MinecraftClient;
+import net.minecraft.nbt.NbtCompound;
 import net.minecraft.network.PacketByteBuf;
 
 public class MouseScrollHandler {
@@ -30,9 +31,24 @@ public class MouseScrollHandler {
             QuirkSystem.QuirkData data = ((IQuirkDataAccessor)client.player).getQuirkData();
             if (!data.getQuirks().isEmpty()) {
                 QuirkSystem.QuirkData.QuirkInstance active = data.getQuirks().get(data.getSelectedQuirkIndex());
+                String quirkId = active.quirkId;
+
+                // --- COPY QUIRK MASQUERADE ---
+                if ("plusultra:copy".equals(quirkId)) {
+                    if (active.persistentData.contains("ActiveSlot")) {
+                        int slot = active.persistentData.getInt("ActiveSlot");
+                        if (slot != -1) {
+                            String key = "Slot_" + slot;
+                            if (active.persistentData.contains(key)) {
+                                NbtCompound slotData = active.persistentData.getCompound(key);
+                                quirkId = slotData.getString("QuirkId");
+                            }
+                        }
+                    }
+                }
 
                 // Allow scrolling for Stockpile (Percent) AND Warp Gate (Anchors)
-                if ("plusultra:stockpile".equals(active.quirkId) || "plusultra:warp_gate".equals(active.quirkId)) {
+                if ("plusultra:stockpile".equals(quirkId) || "plusultra:warp_gate".equals(quirkId)) {
                     if (vertical != 0) {
                         int direction = (vertical > 0) ? 1 : -1;
                         PacketByteBuf buf = PacketByteBufs.create();

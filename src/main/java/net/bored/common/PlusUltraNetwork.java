@@ -188,36 +188,77 @@ public class PlusUltraNetwork {
                 if (data.getQuirks().isEmpty()) return;
                 QuirkSystem.QuirkData.QuirkInstance instance = data.getQuirks().get(data.getSelectedQuirkIndex());
 
-                boolean isStockpile = "plusultra:stockpile".equals(instance.quirkId);
+                // --- COPY PROXY LOGIC FOR SERVER ---
+                // We need to target the INNER data if it's a Copy quirk
+                NbtCompound targetData = instance.persistentData;
+                String targetQuirkId = instance.quirkId;
+
+                if ("plusultra:copy".equals(instance.quirkId)) {
+                    if (instance.persistentData.contains("ActiveSlot")) {
+                        int slot = instance.persistentData.getInt("ActiveSlot");
+                        if (slot != -1) {
+                            String key = "Slot_" + slot;
+                            if (instance.persistentData.contains(key)) {
+                                NbtCompound slotCompound = instance.persistentData.getCompound(key);
+                                targetData = slotCompound.getCompound("Data");
+                                targetQuirkId = slotCompound.getString("QuirkId");
+                            }
+                        }
+                    }
+                }
+
+                boolean isStockpile = "plusultra:stockpile".equals(targetQuirkId);
+                // OFA fusion check (only for root instance, logic implies AFO/OFA aren't copied usually)
                 if (!isStockpile && instance.persistentData.contains("FirstQuirk")) {
                     if ("plusultra:stockpile".equals(instance.persistentData.getString("FirstQuirk"))) {
                         isStockpile = true;
+                        targetData = instance.persistentData; // Reset to root for OFA
                     }
                 }
 
                 if (isStockpile) {
-                    float maxPercent = instance.persistentData.getFloat("StockpilePercent");
-                    float currentSelected = instance.persistentData.contains("SelectedPercent") ?
-                            instance.persistentData.getFloat("SelectedPercent") : maxPercent;
+                    float maxPercent = targetData.getFloat("StockpilePercent");
+                    float currentSelected = targetData.contains("SelectedPercent") ?
+                            targetData.getFloat("SelectedPercent") : maxPercent;
                     float change = direction * 5.0f;
                     float newSelected = currentSelected + change;
                     if (newSelected > maxPercent) newSelected = maxPercent;
                     if (newSelected < 0.0f) newSelected = 0.0f;
-                    instance.persistentData.putFloat("SelectedPercent", newSelected);
+                    targetData.putFloat("SelectedPercent", newSelected);
+
+                    // Save back if it was a copy sub-compound
+                    if ("plusultra:copy".equals(instance.quirkId) && targetData != instance.persistentData) {
+                        int slot = instance.persistentData.getInt("ActiveSlot");
+                        String key = "Slot_" + slot;
+                        NbtCompound slotCompound = instance.persistentData.getCompound(key);
+                        slotCompound.put("Data", targetData);
+                        instance.persistentData.put(key, slotCompound);
+                    }
+
                     sync(player);
                 }
-                else if ("plusultra:warp_gate".equals(instance.quirkId)) {
+                else if ("plusultra:warp_gate".equals(targetQuirkId)) {
                     // Warp Gate Anchor Cycling
-                    if (instance.persistentData.contains("Anchors")) {
-                        NbtList anchors = instance.persistentData.getList("Anchors", NbtElement.COMPOUND_TYPE);
+                    if (targetData.contains("Anchors")) {
+                        NbtList anchors = targetData.getList("Anchors", NbtElement.COMPOUND_TYPE);
                         if (!anchors.isEmpty()) {
-                            int current = instance.persistentData.getInt("SelectedAnchor");
+                            int current = targetData.getInt("SelectedAnchor");
                             int next = (current + direction) % anchors.size();
                             if (next < 0) next += anchors.size();
-                            instance.persistentData.putInt("SelectedAnchor", next);
+                            targetData.putInt("SelectedAnchor", next);
 
                             NbtCompound tag = anchors.getCompound(next);
                             player.sendMessage(Text.of("§5Selected Anchor: " + tag.getString("Name")), true);
+
+                            // Save back if copy
+                            if ("plusultra:copy".equals(instance.quirkId) && targetData != instance.persistentData) {
+                                int slot = instance.persistentData.getInt("ActiveSlot");
+                                String key = "Slot_" + slot;
+                                NbtCompound slotCompound = instance.persistentData.getCompound(key);
+                                slotCompound.put("Data", targetData);
+                                instance.persistentData.put(key, slotCompound);
+                            }
+
                             sync(player);
                         }
                     }

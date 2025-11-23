@@ -43,6 +43,27 @@ public class PlusUltraClientHandlers implements ClientModInitializer {
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             if (client.player == null) return;
 
+            // --- AUTO-DISABLE AFO SIGHT IF QUIRK SWITCHED/LOST ---
+            if (afoSightActive) {
+                QuirkSystem.QuirkData data = ((IQuirkDataAccessor)client.player).getQuirkData();
+                boolean shouldDisable = true;
+
+                if (!data.getQuirks().isEmpty()) {
+                    int index = data.getSelectedQuirkIndex();
+                    if (index >= 0 && index < data.getQuirks().size()) {
+                        QuirkSystem.QuirkData.QuirkInstance active = data.getQuirks().get(index);
+                        if ("plusultra:all_for_one".equals(active.quirkId)) {
+                            shouldDisable = false;
+                        }
+                    }
+                }
+
+                if (shouldDisable) {
+                    afoSightActive = false;
+                    client.player.sendMessage(Text.of("§5[All For One] §7Quirk Sight: §cDisabled"), true);
+                }
+            }
+
             // HANDLE HOLD/RELEASE FOR ACTIVATE KEY
             if (activateKey.isPressed()) {
                 if (!isHoldingActivate) {
@@ -79,18 +100,25 @@ public class PlusUltraClientHandlers implements ClientModInitializer {
             // AFO Sight Toggle
             if (specialKey.wasPressed()) {
                 QuirkSystem.QuirkData data = ((IQuirkDataAccessor)client.player).getQuirkData();
-                boolean hasAFO = false;
-                for(QuirkSystem.QuirkData.QuirkInstance qi : data.getQuirks()) {
-                    if ("plusultra:all_for_one".equals(qi.quirkId)) {
-                        hasAFO = true;
-                        break;
+
+                // Check if AFO is the *selected* quirk to allow enabling
+                boolean isAFOSelected = false;
+                if (!data.getQuirks().isEmpty()) {
+                    int index = data.getSelectedQuirkIndex();
+                    if (index >= 0 && index < data.getQuirks().size()) {
+                        if ("plusultra:all_for_one".equals(data.getQuirks().get(index).quirkId)) {
+                            isAFOSelected = true;
+                        }
                     }
                 }
 
-                if (hasAFO) {
+                if (isAFOSelected) {
                     afoSightActive = !afoSightActive;
                     String status = afoSightActive ? "§aEnabled" : "§cDisabled";
                     client.player.sendMessage(Text.of("§5[All For One] §7Quirk Sight: " + status), true);
+                } else {
+                    // Optional: Feedback if they try to use special key without AFO selected
+                    // client.player.sendMessage(Text.of("§cYou must have All For One active to use this."), true);
                 }
             }
         });

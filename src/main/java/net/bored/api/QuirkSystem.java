@@ -283,13 +283,16 @@ public class QuirkSystem {
 
         public List<QuirkInstance> getQuirks() { return quirks; }
         public int getSelectedQuirkIndex() { return selectedQuirkIndex; }
-        public void setSelectedQuirkIndex(int index) { this.selectedQuirkIndex = index; }
-        public int getSelectedAbilityIndex() { return selectedAbilityIndex; }
 
-        // NEW: Setter for Ability Index
+        // UPDATED: Reset ability index when switching quirks
+        public void setSelectedQuirkIndex(int index) {
+            this.selectedQuirkIndex = index;
+            this.selectedAbilityIndex = 0;
+        }
+
+        public int getSelectedAbilityIndex() { return selectedAbilityIndex; }
         public void setSelectedAbilityIndex(int index) { this.selectedAbilityIndex = index; }
 
-        // UPDATED: Cycle logic now skips hidden moves
         public void cycleAbility(int direction, List<Ability> abilities, QuirkInstance instance) {
             if (abilities.isEmpty()) return;
             int max = abilities.size();
@@ -306,7 +309,6 @@ public class QuirkSystem {
                     return;
                 }
             }
-            // If all hidden, maybe do nothing or stay on current (even if hidden)
         }
     }
 }

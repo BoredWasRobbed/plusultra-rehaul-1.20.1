@@ -45,7 +45,34 @@ public class QuirkHudOverlay implements HudRenderCallback {
         if (index < 0 || index >= data.getQuirks().size()) index = 0;
 
         QuirkSystem.QuirkData.QuirkInstance currentQuirkInstance = data.getQuirks().get(index);
-        QuirkSystem.Quirk realQuirk = QuirkRegistry.get(new Identifier(currentQuirkInstance.quirkId));
+
+        // --- COPY QUIRK PROXY LOGIC ---
+        // If current is Copy and has an active slot, pretend we are the copied quirk for HUD purposes
+        QuirkSystem.QuirkData.QuirkInstance renderInstance = currentQuirkInstance;
+        if ("plusultra:copy".equals(currentQuirkInstance.quirkId)) {
+            if (currentQuirkInstance.persistentData.contains("ActiveSlot")) {
+                int activeSlot = currentQuirkInstance.persistentData.getInt("ActiveSlot");
+                if (activeSlot != -1) {
+                    String key = "Slot_" + activeSlot;
+                    if (currentQuirkInstance.persistentData.contains(key)) {
+                        NbtCompound slotData = currentQuirkInstance.persistentData.getCompound(key);
+                        String copiedId = slotData.getString("QuirkId");
+
+                        // Create a fake instance for rendering context
+                        QuirkSystem.QuirkData.QuirkInstance fake = new QuirkSystem.QuirkData.QuirkInstance(copiedId);
+                        fake.count = currentQuirkInstance.count;
+                        fake.innate = false;
+                        fake.awakened = false;
+                        fake.persistentData = slotData.getCompound("Data");
+                        // We don't need full cooldown map for HUD usually, or we'd need to filter it.
+                        // But for "Stockpile Bar" or "Warp Anchors" which read persistentData, this is enough.
+                        renderInstance = fake;
+                    }
+                }
+            }
+        }
+
+        QuirkSystem.Quirk realQuirk = QuirkRegistry.get(new Identifier(renderInstance.quirkId));
         if (realQuirk == null) return;
 
         int width = context.getScaledWindowWidth();
@@ -53,20 +80,20 @@ public class QuirkHudOverlay implements HudRenderCallback {
         TextRenderer font = client.textRenderer;
 
         // Stockpile Bar
-        boolean showStockpile = "plusultra:stockpile".equals(currentQuirkInstance.quirkId);
-        if ("plusultra:one_for_all".equals(currentQuirkInstance.quirkId)) {
-            if (currentQuirkInstance.persistentData.contains("FirstQuirk") &&
-                    "plusultra:stockpile".equals(currentQuirkInstance.persistentData.getString("FirstQuirk"))) {
+        boolean showStockpile = "plusultra:stockpile".equals(renderInstance.quirkId);
+        if ("plusultra:one_for_all".equals(renderInstance.quirkId)) {
+            if (renderInstance.persistentData.contains("FirstQuirk") &&
+                    "plusultra:stockpile".equals(renderInstance.persistentData.getString("FirstQuirk"))) {
                 showStockpile = true;
             }
         }
         if (showStockpile) {
-            renderStockpileBar(context, font, height, currentQuirkInstance);
+            renderStockpileBar(context, font, height, renderInstance);
         }
 
         // Warp Gate Info
-        if ("plusultra:warp_gate".equals(currentQuirkInstance.quirkId)) {
-            renderWarpInfo(context, font, height, currentQuirkInstance);
+        if ("plusultra:warp_gate".equals(renderInstance.quirkId)) {
+            renderWarpInfo(context, font, height, renderInstance);
         }
 
         int x = width - BAR_WIDTH - PADDING;
@@ -80,7 +107,7 @@ public class QuirkHudOverlay implements HudRenderCallback {
         context.fill(x, y, rightEdge, y + BAR_HEIGHT, BACKGROUND_COLOR);
         int totalFillWidth = (int) ((currentStamina / maxStamina) * BAR_WIDTH);
         if (totalFillWidth > BAR_WIDTH) totalFillWidth = BAR_WIDTH;
-        int barColor = currentQuirkInstance.awakened ? AWAKENED_STAMINA_COLOR : realQuirk.getIconColor();
+        int barColor = renderInstance.awakened ? AWAKENED_STAMINA_COLOR : realQuirk.getIconColor();
         context.fill(x, y, x + totalFillWidth, y + BAR_HEIGHT, barColor);
 
         context.drawText(font, "Stamina", x, y - 10, 0xFFFFFF, true);
@@ -89,7 +116,20 @@ public class QuirkHudOverlay implements HudRenderCallback {
 
         int currentY = y - 25;
 
-        List<QuirkSystem.Ability> abilities = realQuirk.getAbilities(currentQuirkInstance);
+        // Use the original instance to get abilities list because CopyQuirk handles the dynamic list generation
+        // But if we are masquerading, CopyQuirk.getAbilities returns the wrapped abilities which is correct.
+        // However, we passed 'renderInstance' (the fake one) to 'realQuirk'.
+        // If we use realQuirk.getAbilities(renderInstance), we get the raw abilities of the copied quirk.
+        // If we use CopyQuirk.getAbilities(currentQuirkInstance), we get the WrappedAbilities.
+        // The HUD needs to match what the player sees.
+        // CopyQuirk.getAbilities handles the "Active Slot" logic to return the correct list.
+        // So we should use the ORIGINAL instance for the list, but the FAKE instance for data checks (like Stockpile bar).
+
+        // Re-fetch quirk for the list logic
+        QuirkSystem.Quirk listQuirk = QuirkRegistry.get(new Identifier(currentQuirkInstance.quirkId));
+        if (listQuirk == null) return;
+
+        List<QuirkSystem.Ability> abilities = listQuirk.getAbilities(currentQuirkInstance);
         int selectedSlot = data.getSelectedAbilityIndex();
 
         for (int i = abilities.size() - 1; i >= 0; i--) {
@@ -126,6 +166,9 @@ public class QuirkHudOverlay implements HudRenderCallback {
         }
 
         int headerY = currentY - 3;
+
+        // Display Name: If active slot, use the copied name. If not, use "Copy".
+        // 'renderInstance' is the fake one if active, so its ID is the copied one.
         String quirkDisplayName = realQuirk.getId().getPath().replace("_", " ");
 
         StringBuilder sb = new StringBuilder();
@@ -146,8 +189,8 @@ public class QuirkHudOverlay implements HudRenderCallback {
         context.drawText(font, quirkDisplayName, rightEdge - font.getWidth(quirkDisplayName), headerY, nameColor, true);
 
         // RESTORED LEVEL AND XP BAR
-        if ("plusultra:one_for_all".equals(currentQuirkInstance.quirkId)) {
-            int gen = currentQuirkInstance.persistentData.getInt("Generation");
+        if ("plusultra:one_for_all".equals(renderInstance.quirkId)) {
+            int gen = renderInstance.persistentData.getInt("Generation");
             if (gen > 0) {
                 String genText = "Generation " + gen;
                 context.drawText(font, genText, rightEdge - font.getWidth(genText), headerY - 24, 0xFFFFD700, true);
