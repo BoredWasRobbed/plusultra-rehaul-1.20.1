@@ -2,6 +2,7 @@ package net.bored.common;
 
 import net.bored.api.QuirkSystem;
 import net.bored.common.quirks.AllForOneQuirk;
+import net.bored.common.quirks.DecayQuirk;
 import net.bored.common.quirks.OneForAllQuirk;
 import net.bored.common.quirks.SuperRegenerationQuirk;
 import net.bored.common.quirks.StockpileQuirk;
@@ -18,6 +19,7 @@ public class QuirkRegistry {
         register(new SuperRegenerationQuirk());
         register(new StockpileQuirk());
         register(new OneForAllQuirk());
+        register(new DecayQuirk());
     }
 
     public static void register(QuirkSystem.Quirk quirk) {

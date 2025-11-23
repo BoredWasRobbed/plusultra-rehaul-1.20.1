@@ -19,7 +19,7 @@ public class PlusUltraConfig {
     private static PlusUltraConfig INSTANCE;
 
     // --- Config Options ---
-    public boolean disableQuirkDestruction = true;
+    public boolean disableQuirkDestruction = false;
     public boolean limitUniqueQuirks = true;
 
     // --- Mob Spawn Options ---
