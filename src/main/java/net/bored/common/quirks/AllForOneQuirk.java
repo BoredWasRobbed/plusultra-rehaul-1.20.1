@@ -14,10 +14,8 @@ public class AllForOneQuirk extends QuirkSystem.Quirk {
 
     public AllForOneQuirk() { super(ID); }
 
-    // Override to prevent Meta scaling for AFO
     @Override
     public float getPowerMultiplier(int count, QuirkSystem.QuirkData data) {
-        // Returns base multiplier based only on count, ignoring data.meta
         return 1.0f + ((count - 1) * 0.5f);
     }
 
@@ -28,12 +26,8 @@ public class AllForOneQuirk extends QuirkSystem.Quirk {
             public void onActivate(LivingEntity entity, QuirkSystem.QuirkData data, QuirkSystem.QuirkData.QuirkInstance instance) {
                 data.runtimeTags.put("AFO_MODE", "STEAL");
                 data.currentStamina -= this.getCost();
-
-                // Pass data, though overridden method ignores it
-                float power = getPowerMultiplier(instance.count, data);
-
                 if(entity instanceof PlayerEntity p) p.sendMessage(Text.of("§c[AFO] Next hit will STEAL a quirk."), true);
-                this.triggerCooldown();
+                this.triggerCooldown(instance);
             }
         });
 
@@ -43,14 +37,13 @@ public class AllForOneQuirk extends QuirkSystem.Quirk {
                 data.runtimeTags.put("AFO_MODE", "GIVE");
                 data.currentStamina -= this.getCost();
                 if(entity instanceof PlayerEntity p) p.sendMessage(Text.of("§e[AFO] Next hit will GIVE your selected quirk."), true);
-                this.triggerCooldown();
+                this.triggerCooldown(instance);
             }
         });
     }
 
     @Override
     public void onUpdate(LivingEntity entity, QuirkSystem.QuirkData data, QuirkSystem.QuirkData.QuirkInstance instance) {
-        // AFO Passive: Ensure it is marked as taken
         if (PlusUltraConfig.get().limitUniqueQuirks && !entity.getWorld().isClient && entity.age % 100 == 0) {
             UniqueQuirkState state = UniqueQuirkState.getServerState((ServerWorld) entity.getWorld());
             if (!state.isQuirkTaken(ID.toString())) {

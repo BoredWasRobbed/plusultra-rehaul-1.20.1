@@ -17,6 +17,7 @@ import java.util.List;
 
 public class PlusUltraNetwork {
     public static final Identifier ACTIVATE_ABILITY = new Identifier("plusultra", "activate_ability");
+    public static final Identifier STOP_ABILITY = new Identifier("plusultra", "stop_ability");
     public static final Identifier SWITCH_ABILITY = new Identifier("plusultra", "switch_ability");
     public static final Identifier SWITCH_QUIRK = new Identifier("plusultra", "switch_quirk");
     public static final Identifier SYNC_DATA = new Identifier("plusultra", "sync_data");
@@ -52,9 +53,33 @@ public class PlusUltraNetwork {
                         } else {
                             if (instance.isLocked) player.sendMessage(Text.of("§cThis Quirk is currently locked!"), true);
                             else if (data.level < ability.getRequiredLevel()) player.sendMessage(Text.of("§cLevel too low!"), true);
-                            else if (!ability.isReady()) player.sendMessage(Text.of("§cCooldown!"), true);
+                            else if (!ability.isReady(instance)) player.sendMessage(Text.of("§cCooldown!"), true);
                             else player.sendMessage(Text.of("§cNot enough Stamina!"), true);
                         }
+                    }
+                }
+            });
+        });
+
+        ServerPlayNetworking.registerGlobalReceiver(STOP_ABILITY, (server, player, handler, buf, responseSender) -> {
+            server.execute(() -> {
+                QuirkSystem.QuirkData data = ((IQuirkDataAccessor)player).getQuirkData();
+                if (data.getQuirks().isEmpty()) return;
+
+                int qIndex = data.getSelectedQuirkIndex();
+                if (qIndex < 0 || qIndex >= data.getQuirks().size()) return;
+
+                QuirkSystem.QuirkData.QuirkInstance instance = data.getQuirks().get(qIndex);
+                QuirkSystem.Quirk quirk = QuirkRegistry.get(new Identifier(instance.quirkId));
+
+                if (quirk != null) {
+                    int aIndex = data.getSelectedAbilityIndex();
+                    List<QuirkSystem.Ability> abilities = quirk.getAbilities(instance);
+
+                    if (aIndex >= 0 && aIndex < abilities.size()) {
+                        QuirkSystem.Ability ability = abilities.get(aIndex);
+                        ability.onRelease(player, data, instance);
+                        sync(player);
                     }
                 }
             });
@@ -95,8 +120,9 @@ public class PlusUltraNetwork {
                 QuirkSystem.Quirk quirk = QuirkRegistry.get(new Identifier(instance.quirkId));
 
                 if (quirk != null) {
-                    int maxAbilities = quirk.getAbilities(instance).size();
-                    data.cycleAbility(direction, maxAbilities);
+                    // UPDATED: Pass abilities list and instance to cycleAbility
+                    List<QuirkSystem.Ability> abilities = quirk.getAbilities(instance);
+                    data.cycleAbility(direction, abilities, instance);
                     sync(player);
                 }
             });
@@ -106,7 +132,8 @@ public class PlusUltraNetwork {
             int index = buf.readInt();
             server.execute(() -> {
                 ((IQuirkDataAccessor)player).getQuirkData().setSelectedQuirkIndex(index);
-                ((IQuirkDataAccessor)player).getQuirkData().cycleAbility(0, 1);
+                // FIXED: Use the setter method instead of direct access
+                ((IQuirkDataAccessor)player).getQuirkData().setSelectedAbilityIndex(0);
                 sync(player);
             });
         });
@@ -132,7 +159,7 @@ public class PlusUltraNetwork {
                     sync(tp);
                 }
                 sync(player);
-                sync(target); // Sync target changes to clients
+                sync(target);
             });
         });
 
@@ -215,7 +242,6 @@ public class PlusUltraNetwork {
         }
     }
 
-    // NEW: Sends entity data to a SPECIFIC player (used when they start tracking)
     public static void syncToPlayer(LivingEntity entity, ServerPlayerEntity target) {
         if (entity.getWorld().isClient) return;
 

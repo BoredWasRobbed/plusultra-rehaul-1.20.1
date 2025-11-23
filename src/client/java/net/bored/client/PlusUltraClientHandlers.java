@@ -29,7 +29,8 @@ public class PlusUltraClientHandlers implements ClientModInitializer {
     public static KeyBinding statsKey;
     public static KeyBinding specialKey;
 
-    public static boolean afoSightActive = false; // New Toggle State
+    public static boolean afoSightActive = false;
+    private static boolean isHoldingActivate = false; // Track key state
 
     @Override
     public void onInitializeClient() {
@@ -42,9 +43,21 @@ public class PlusUltraClientHandlers implements ClientModInitializer {
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             if (client.player == null) return;
 
-            if (activateKey.wasPressed()) {
-                ClientPlayNetworking.send(PlusUltraNetwork.ACTIVATE_ABILITY, PacketByteBufs.create());
+            // HANDLE HOLD/RELEASE FOR ACTIVATE KEY
+            if (activateKey.isPressed()) {
+                if (!isHoldingActivate) {
+                    // Send Start Packet
+                    ClientPlayNetworking.send(PlusUltraNetwork.ACTIVATE_ABILITY, PacketByteBufs.create());
+                    isHoldingActivate = true;
+                }
+            } else {
+                if (isHoldingActivate) {
+                    // Send Stop Packet
+                    ClientPlayNetworking.send(PlusUltraNetwork.STOP_ABILITY, PacketByteBufs.create());
+                    isHoldingActivate = false;
+                }
             }
+
             if (menuKey.wasPressed()) {
                 QuirkSystem.QuirkData data = ((IQuirkDataAccessor)client.player).getQuirkData();
                 if (data.getQuirks().size() >= 2) {
@@ -63,10 +76,9 @@ public class PlusUltraClientHandlers implements ClientModInitializer {
                 }
             }
 
-            // NEW: AFO Sight Toggle
+            // AFO Sight Toggle
             if (specialKey.wasPressed()) {
                 QuirkSystem.QuirkData data = ((IQuirkDataAccessor)client.player).getQuirkData();
-                // Check if they have AFO
                 boolean hasAFO = false;
                 for(QuirkSystem.QuirkData.QuirkInstance qi : data.getQuirks()) {
                     if ("plusultra:all_for_one".equals(qi.quirkId)) {
@@ -191,7 +203,6 @@ public class PlusUltraClientHandlers implements ClientModInitializer {
         }
 
         private List<QuirkSystem.QuirkData.QuirkInstance> getQuirks(QuirkSystem.QuirkData data) {
-            // 3. Hide the past user's quirks in the selection list until they are unlocked.
             List<QuirkSystem.QuirkData.QuirkInstance> visibleQuirks = new ArrayList<>();
             for(QuirkSystem.QuirkData.QuirkInstance q : data.getQuirks()) {
                 if(!q.isLocked) {
@@ -237,7 +248,6 @@ public class PlusUltraClientHandlers implements ClientModInitializer {
                 if (currentY + 20 >= listStart && currentY <= listStart + listHeight) {
                     boolean isHovered = (mouseX >= startX + 10 && mouseX <= endX - 10 && mouseY >= currentY && mouseY <= currentY + 20);
 
-                    // Find true index in actual data for selection check
                     int realIndex = data.getQuirks().indexOf(qi);
                     boolean isSelected = (realIndex == data.getSelectedQuirkIndex());
 

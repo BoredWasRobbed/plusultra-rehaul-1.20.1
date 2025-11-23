@@ -40,10 +40,8 @@ public class QuirkSystem {
 
         public void addAbility(Ability ability) { this.abilities.add(ability); }
 
-        // UPDATED: Deprecated the no-arg getter in favor of context-aware one
         public List<Ability> getAbilities() { return abilities; }
 
-        // NEW: Context-aware ability getter for Dynamic Quirks (like OFA)
         public List<Ability> getAbilities(QuirkData.QuirkInstance instance) {
             return abilities;
         }
@@ -55,7 +53,6 @@ public class QuirkSystem {
         private final String name;
         private final AbilityType type;
         private int cooldownMax;
-        private int currentCooldown;
         private final int requiredLevel;
         private final double staminaCost;
 
@@ -72,25 +69,47 @@ public class QuirkSystem {
         public void onHoldTick(LivingEntity entity, QuirkData data, QuirkData.QuirkInstance instance) {}
         public void onRelease(LivingEntity entity, QuirkData data, QuirkData.QuirkInstance instance) {}
 
-        public void tick() { if (currentCooldown > 0) currentCooldown--; }
-        public boolean isReady() { return currentCooldown <= 0; }
+        public void tick(QuirkData.QuirkInstance instance) {
+            int cd = getCurrentCooldown(instance);
+            if (cd > 0) {
+                instance.cooldowns.put(this.name, cd - 1);
+            }
+        }
+
+        public boolean isReady(QuirkData.QuirkInstance instance) {
+            return getCurrentCooldown(instance) <= 0;
+        }
+
         public AbilityType getType() { return type; }
 
         public boolean canUse(QuirkData data, QuirkData.QuirkInstance instance) {
             if (instance.isLocked) return false;
-            return data.level >= requiredLevel && isReady() && data.currentStamina >= staminaCost;
+            // Also check if hidden (which implies unuseable)
+            if (isHidden(data, instance)) return false;
+            return data.level >= requiredLevel && isReady(instance) && data.currentStamina >= staminaCost;
         }
 
-        public boolean canUse(QuirkData data) {
-            return data.level >= requiredLevel && isReady() && data.currentStamina >= staminaCost;
+        public void triggerCooldown(QuirkData.QuirkInstance instance) {
+            instance.cooldowns.put(this.name, this.cooldownMax);
         }
 
-        public void triggerCooldown() { this.currentCooldown = cooldownMax; }
+        // NEW: Check if ability should be hidden from list/selection
+        public boolean isHidden(QuirkData data, QuirkData.QuirkInstance instance) {
+            // Default behavior: Hide if level requirement not met
+            return data.level < this.requiredLevel;
+        }
+
         public String getName() { return name; }
         public int getRequiredLevel() { return requiredLevel; }
         public double getCost() { return staminaCost; }
-        public int getCurrentCooldown() { return currentCooldown; }
-        public void setCurrentCooldown(int cd) { this.currentCooldown = cd; }
+
+        public int getCurrentCooldown(QuirkData.QuirkInstance instance) {
+            return instance.cooldowns.getOrDefault(this.name, 0);
+        }
+
+        public void setCurrentCooldown(QuirkData.QuirkInstance instance, int cd) {
+            instance.cooldowns.put(this.name, cd);
+        }
     }
 
     public static class QuirkData {
@@ -105,8 +124,6 @@ public class QuirkSystem {
         private int selectedAbilityIndex = 0;
         public int aiActionCooldown = 0;
         public Map<String, String> runtimeTags = new HashMap<>();
-
-        // FIX: Added persistentData field to track player-level data (like First Join status)
         public NbtCompound persistentData = new NbtCompound();
 
         public static class QuirkInstance {
@@ -117,6 +134,7 @@ public class QuirkSystem {
             public boolean awakened = false;
             public boolean isLocked = false;
             public NbtCompound persistentData = new NbtCompound();
+            public Map<String, Integer> cooldowns = new HashMap<>();
 
             public QuirkInstance(String id) { this.quirkId = id; }
         }
@@ -163,9 +181,9 @@ public class QuirkSystem {
                 if (quirk != null) {
                     List<Ability> instanceAbilities = quirk.getAbilities(instance);
                     for (Ability ability : instanceAbilities) {
-                        ability.tick();
+                        ability.tick(instance);
                         if (this.cooldownsDisabled) {
-                            ability.setCurrentCooldown(0);
+                            ability.setCurrentCooldown(instance, 0);
                         }
                     }
                     if (instance.isPassivesActive && !instance.isLocked) {
@@ -201,8 +219,6 @@ public class QuirkSystem {
             nbt.putBoolean("CooldownsDisabled", cooldownsDisabled);
             nbt.putInt("SelectedQ", selectedQuirkIndex);
             nbt.putInt("SelectedA", selectedAbilityIndex);
-
-            // FIX: Save persistent data
             nbt.put("PlayerData", persistentData);
 
             NbtList quirkList = new NbtList();
@@ -216,14 +232,11 @@ public class QuirkSystem {
                 qTag.put("Data", qi.persistentData);
 
                 NbtCompound cdTag = new NbtCompound();
-                Quirk q = QuirkRegistry.get(new Identifier(qi.quirkId));
-                if (q != null) {
-                    List<Ability> abilities = q.getAbilities(qi);
-                    for(int i=0; i<abilities.size(); i++) {
-                        cdTag.putInt("A"+i, abilities.get(i).getCurrentCooldown());
-                    }
+                for(Map.Entry<String, Integer> entry : qi.cooldowns.entrySet()) {
+                    cdTag.putInt(entry.getKey(), entry.getValue());
                 }
                 qTag.put("Cooldowns", cdTag);
+
                 quirkList.add(qTag);
             }
             nbt.put("Quirks", quirkList);
@@ -240,8 +253,6 @@ public class QuirkSystem {
             if (nbt.contains("XP")) experience = nbt.getInt("XP");
             if (nbt.contains("StaminaCur")) currentStamina = nbt.getDouble("StaminaCur");
             if (nbt.contains("CooldownsDisabled")) cooldownsDisabled = nbt.getBoolean("CooldownsDisabled");
-
-            // FIX: Load persistent data
             if (nbt.contains("PlayerData")) persistentData = nbt.getCompound("PlayerData");
 
             selectedQuirkIndex = nbt.getInt("SelectedQ");
@@ -258,20 +269,15 @@ public class QuirkSystem {
                 if (qTag.contains("Data")) qi.persistentData = qTag.getCompound("Data");
                 if (qTag.contains("Locked")) qi.isLocked = qTag.getBoolean("Locked");
                 qi.awakened = qTag.getBoolean("Awakened");
-                quirks.add(qi);
 
                 if (qTag.contains("Cooldowns")) {
                     NbtCompound cdTag = qTag.getCompound("Cooldowns");
-                    Quirk q = QuirkRegistry.get(new Identifier(id));
-                    if (q != null) {
-                        List<Ability> abilities = q.getAbilities(qi);
-                        for(int j=0; j<abilities.size(); j++) {
-                            if(cdTag.contains("A"+j)) {
-                                abilities.get(j).setCurrentCooldown(cdTag.getInt("A"+j));
-                            }
-                        }
+                    for(String key : cdTag.getKeys()) {
+                        qi.cooldowns.put(key, cdTag.getInt(key));
                     }
                 }
+
+                quirks.add(qi);
             }
         }
 
@@ -280,10 +286,27 @@ public class QuirkSystem {
         public void setSelectedQuirkIndex(int index) { this.selectedQuirkIndex = index; }
         public int getSelectedAbilityIndex() { return selectedAbilityIndex; }
 
-        public void cycleAbility(int direction, int maxAbilities) {
-            if (maxAbilities <= 0) return;
-            selectedAbilityIndex = (selectedAbilityIndex + direction) % maxAbilities;
-            if (selectedAbilityIndex < 0) selectedAbilityIndex += maxAbilities;
+        // NEW: Setter for Ability Index
+        public void setSelectedAbilityIndex(int index) { this.selectedAbilityIndex = index; }
+
+        // UPDATED: Cycle logic now skips hidden moves
+        public void cycleAbility(int direction, List<Ability> abilities, QuirkInstance instance) {
+            if (abilities.isEmpty()) return;
+            int max = abilities.size();
+            int start = selectedAbilityIndex;
+            int current = start;
+
+            // Safe loop to find next visible ability
+            for(int i=0; i<max; i++) {
+                current = (current + direction) % max;
+                if (current < 0) current += max;
+
+                if (!abilities.get(current).isHidden(this, instance)) {
+                    selectedAbilityIndex = current;
+                    return;
+                }
+            }
+            // If all hidden, maybe do nothing or stay on current (even if hidden)
         }
     }
 }

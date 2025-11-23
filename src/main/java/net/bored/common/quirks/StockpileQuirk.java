@@ -30,7 +30,6 @@ public class StockpileQuirk extends QuirkSystem.Quirk {
 
     @Override
     public void registerAbilities() {
-        // Ability 1: Smash
         this.addAbility(new QuirkSystem.Ability("Smash", QuirkSystem.AbilityType.INSTANT, 60, 1, 10.0) {
             @Override
             public void onActivate(LivingEntity entity, QuirkSystem.QuirkData data, QuirkSystem.QuirkData.QuirkInstance instance) {
@@ -53,11 +52,7 @@ public class StockpileQuirk extends QuirkSystem.Quirk {
                 double impactZ = entity.getZ() + (rotation.z * forwardOffset);
 
                 if (entity.getWorld() instanceof ServerWorld world) {
-                    // DESTRUCTION LOGIC
-                    // Check Global Config First
                     boolean canDestroy = !PlusUltraConfig.get().disableQuirkDestruction;
-
-                    // Then check runtime tags (temporary disabled via command)
                     if (data.runtimeTags.containsKey("DESTRUCTION_DISABLED")) canDestroy = false;
 
                     if (selectedStock >= 75.0f && canDestroy) {
@@ -66,10 +61,8 @@ public class StockpileQuirk extends QuirkSystem.Quirk {
                         createDestruction(world, destCenter, radius, entity, selectedStock);
                     }
 
-                    // SOUNDS
                     float pitch = 1.0f - (selectedStock / 200.0f);
                     float volume = 1.0f + (selectedStock / 50.0f);
-
                     world.playSound(null, entity.getX(), entity.getY(), entity.getZ(),
                             SoundEvents.ENTITY_PLAYER_ATTACK_STRONG, SoundCategory.PLAYERS, volume, pitch);
 
@@ -82,7 +75,6 @@ public class StockpileQuirk extends QuirkSystem.Quirk {
                                 SoundEvents.ENTITY_WARDEN_SONIC_BOOM, SoundCategory.PLAYERS, volume * 0.5f, 0.5f);
                     }
 
-                    // PARTICLES
                     int particleCount = (int)(selectedStock / 2);
                     if (selectedStock < 20) {
                         world.spawnParticles(ParticleTypes.POOF, impactX, impactY, impactZ, 10, 0.2, 0.2, 0.2, 0.05);
@@ -115,11 +107,10 @@ public class StockpileQuirk extends QuirkSystem.Quirk {
                     String msg = String.format("§eSmash! (%.0f%%) [%.1f Dmg]", selectedStock, damage);
                     p.sendMessage(Text.of(msg), true);
                 }
-                this.triggerCooldown();
+                this.triggerCooldown(instance);
             }
         });
 
-        // Ability 2: Leap
         this.addAbility(new QuirkSystem.Ability("Leap", QuirkSystem.AbilityType.INSTANT, 40, 1, 15.0) {
             @Override
             public void onActivate(LivingEntity entity, QuirkSystem.QuirkData data, QuirkSystem.QuirkData.QuirkInstance instance) {
@@ -163,11 +154,10 @@ public class StockpileQuirk extends QuirkSystem.Quirk {
                 if (entity instanceof PlayerEntity p) {
                     p.sendMessage(Text.of(String.format("§bLeap! (%.0f%%)", selectedStock)), true);
                 }
-                this.triggerCooldown();
+                this.triggerCooldown(instance);
             }
         });
 
-        // Ability 3: Flick
         this.addAbility(new QuirkSystem.Ability("Flick", QuirkSystem.AbilityType.INSTANT, 30, 1, 20.0) {
             @Override
             public void onActivate(LivingEntity entity, QuirkSystem.QuirkData data, QuirkSystem.QuirkData.QuirkInstance instance) {
@@ -187,7 +177,6 @@ public class StockpileQuirk extends QuirkSystem.Quirk {
                     proj.setVelocity(entity, entity.getPitch(), entity.getYaw(), 0.0F, 3.0F, 1.0F);
                     entity.getWorld().spawnEntity(proj);
 
-                    // FIRING SOUNDS
                     float volume = 1.0f + (selectedStock / 50.0f);
                     float pitch = 2.0f - (selectedStock / 100.0f);
 
@@ -209,7 +198,7 @@ public class StockpileQuirk extends QuirkSystem.Quirk {
                 if (entity instanceof PlayerEntity p) {
                     p.sendMessage(Text.of("§bFlick!"), true);
                 }
-                this.triggerCooldown();
+                this.triggerCooldown(instance);
             }
         });
     }
@@ -218,7 +207,6 @@ public class StockpileQuirk extends QuirkSystem.Quirk {
     public void onUpdate(LivingEntity entity, QuirkSystem.QuirkData data, QuirkSystem.QuirkData.QuirkInstance instance) {
         if (data.runtimeTags.containsKey("STOCKPILE_LEAPING")) {
             entity.fallDistance = 0;
-
             double currentY = entity.getY();
             double peakY = Double.parseDouble(data.runtimeTags.getOrDefault("STOCKPILE_LEAP_PEAK", String.valueOf(currentY)));
 
@@ -238,7 +226,6 @@ public class StockpileQuirk extends QuirkSystem.Quirk {
         }
 
         if (entity.getWorld().isClient) return;
-
         long currentTime = entity.getWorld().getTime();
 
         if (!instance.persistentData.contains("LastStockpileTime")) {
@@ -247,7 +234,6 @@ public class StockpileQuirk extends QuirkSystem.Quirk {
         }
 
         long lastTime = instance.persistentData.getLong("LastStockpileTime");
-
         if (currentTime > lastTime) {
             long diff = currentTime - lastTime;
             float current = instance.persistentData.getFloat("StockpilePercent");
@@ -256,14 +242,12 @@ public class StockpileQuirk extends QuirkSystem.Quirk {
                 double increment = (double)diff / 24000.0;
                 current += (float)increment;
                 if (current > 100.0f) current = 100.0f;
-
                 instance.persistentData.putFloat("StockpilePercent", current);
 
                 if (instance.persistentData.contains("SelectedPercent")) {
                     float sel = instance.persistentData.getFloat("SelectedPercent");
                     if (sel > current) instance.persistentData.putFloat("SelectedPercent", current);
                 }
-
                 if ((diff > 20 || entity.age % 100 == 0) && entity instanceof ServerPlayerEntity sp) {
                     PlusUltraNetwork.sync(sp);
                 }
@@ -272,28 +256,20 @@ public class StockpileQuirk extends QuirkSystem.Quirk {
         instance.persistentData.putLong("LastStockpileTime", currentTime);
     }
 
-    // FIX: Rough Sphere Destruction
     private void createDestruction(World world, BlockPos center, int radius, LivingEntity entity, float power) {
         if (radius > 0 && world.getGameRules().getBoolean(GameRules.DO_MOB_GRIEFING)) {
             for (int x = -radius; x <= radius; x++) {
                 for (int y = -radius; y <= radius; y++) {
                     for (int z = -radius; z <= radius; z++) {
-
                         double distance = Math.sqrt(x*x + y*y + z*z);
-
-                        // Noise Factor: 0.0 to 2.0
-                        // Makes the edges imperfect and jagged
                         double noise = world.random.nextDouble() * 2.0;
-
                         if (distance <= (radius - noise)) {
                             BlockPos p = center.add(x, y, z);
                             if (!world.isAir(p)) {
                                 BlockState state = world.getBlockState(p);
                                 float hardness = state.getHardness(world, p);
-
                                 if (hardness >= 0) {
                                     float breakChance = 0.0f;
-
                                     if (power >= hardness * 2.0f) {
                                         if (hardness > 0) {
                                             breakChance = (power / (hardness * 10.0f));
@@ -301,9 +277,7 @@ public class StockpileQuirk extends QuirkSystem.Quirk {
                                             breakChance = 1.0f;
                                         }
                                     }
-
                                     if (hardness < 0.5f) breakChance = 1.0f;
-
                                     if (world.random.nextFloat() < breakChance) {
                                         boolean shouldDrop = world.random.nextFloat() < 0.3f;
                                         world.breakBlock(p, shouldDrop, entity);
@@ -319,18 +293,14 @@ public class StockpileQuirk extends QuirkSystem.Quirk {
 
     private void handleLanding(LivingEntity entity, double fallHeight, QuirkSystem.QuirkData data) {
         if (!(entity.getWorld() instanceof ServerWorld world)) return;
-
-        // Check Destruction Config here too
         boolean canDestroy = !PlusUltraConfig.get().disableQuirkDestruction;
         if (data.runtimeTags.containsKey("DESTRUCTION_DISABLED")) canDestroy = false;
 
         if (fallHeight > 4.0 && canDestroy) {
             int radius = (int) (fallHeight / 5.0);
             if (radius > 6) radius = 6;
-
             float impactPower = (float)fallHeight * 2.0f;
             if (impactPower > 100f) impactPower = 100f;
-
             createDestruction(world, entity.getBlockPos().down(), radius, entity, impactPower);
         }
 

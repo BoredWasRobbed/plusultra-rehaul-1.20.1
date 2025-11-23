@@ -27,7 +27,6 @@ public class OneForAllQuirk extends QuirkSystem.Quirk {
 
     @Override
     public void registerAbilities() {
-        // Only Bestowal is native to the Quirk Core itself
         this.addAbility(new QuirkSystem.Ability("Bestow (Transfer)", QuirkSystem.AbilityType.INSTANT, 1200, 1, 100.0) {
             @Override
             public void onActivate(LivingEntity entity, QuirkSystem.QuirkData data, QuirkSystem.QuirkData.QuirkInstance instance) {
@@ -36,36 +35,27 @@ public class OneForAllQuirk extends QuirkSystem.Quirk {
                 if(entity instanceof PlayerEntity p) {
                     p.sendMessage(Text.of("§e[Bestowal] Next hit will TRANSFER One For All!"), true);
                 }
-                this.triggerCooldown();
+                this.triggerCooldown(instance);
             }
         });
     }
 
-    // DYNAMIC MERGE LOGIC
     @Override
     public List<QuirkSystem.Ability> getAbilities(QuirkSystem.QuirkData.QuirkInstance instance) {
         List<QuirkSystem.Ability> dynamicList = new ArrayList<>();
-
-        // 1. Get the fused quirk ID from NBT
         if (instance.persistentData.contains("FirstQuirk")) {
             String fusedId = instance.persistentData.getString("FirstQuirk");
             QuirkSystem.Quirk fusedQuirk = QuirkRegistry.get(new Identifier(fusedId));
-
             if (fusedQuirk != null) {
-                // Add all abilities from the fused quirk
                 dynamicList.addAll(fusedQuirk.getAbilities(instance));
             }
         }
-
-        // 2. Add Bestowal (which is in the base list)
         dynamicList.addAll(super.getAbilities(instance));
-
         return dynamicList;
     }
 
     @Override
     public void onUpdate(LivingEntity entity, QuirkSystem.QuirkData data, QuirkSystem.QuirkData.QuirkInstance instance) {
-        // 0. Ensure Taken Status
         if (PlusUltraConfig.get().limitUniqueQuirks && !entity.getWorld().isClient && entity.age % 100 == 0) {
             UniqueQuirkState state = UniqueQuirkState.getServerState((ServerWorld) entity.getWorld());
             if (!state.isQuirkTaken(ID.toString())) {
@@ -73,7 +63,6 @@ public class OneForAllQuirk extends QuirkSystem.Quirk {
             }
         }
 
-        // 1. Delegate Update to fused quirk (for passives like Stockpile Accumulation or Regen)
         if (instance.persistentData.contains("FirstQuirk")) {
             String fusedId = instance.persistentData.getString("FirstQuirk");
             QuirkSystem.Quirk fusedQuirk = QuirkRegistry.get(new Identifier(fusedId));
@@ -82,7 +71,6 @@ public class OneForAllQuirk extends QuirkSystem.Quirk {
             }
         }
 
-        // 2. Unlocking Logic
         if (entity.age % 100 == 0) {
             int generation = instance.persistentData.getInt("Generation");
             if (generation >= 9 && data.level >= 35) {

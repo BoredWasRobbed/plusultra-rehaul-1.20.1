@@ -1,16 +1,19 @@
 package net.bored.common.quirks;
 
 import net.bored.api.QuirkSystem;
+import net.bored.common.PlusUltraNetwork;
 import net.bored.config.PlusUltraConfig;
 import net.minecraft.block.BlockState;
 import net.minecraft.block.Blocks;
+import net.minecraft.block.FluidBlock;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.LivingEntity;
 import net.minecraft.entity.effect.StatusEffectInstance;
 import net.minecraft.entity.effect.StatusEffects;
 import net.minecraft.entity.player.PlayerEntity;
-import net.minecraft.item.ItemStack;
 import net.minecraft.particle.ParticleTypes;
+import net.minecraft.registry.Registries;
+import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.server.world.ServerWorld;
 import net.minecraft.sound.SoundCategory;
 import net.minecraft.sound.SoundEvents;
@@ -27,8 +30,6 @@ import net.minecraft.world.World;
 
 import java.util.HashSet;
 import java.util.Set;
-import java.util.stream.Collectors;
-import java.util.Arrays;
 
 public class DecayQuirk extends QuirkSystem.Quirk {
     public static final Identifier ID = new Identifier("plusultra", "decay");
@@ -36,25 +37,177 @@ public class DecayQuirk extends QuirkSystem.Quirk {
     public DecayQuirk() { super(ID); }
 
     @Override
-    public int getIconColor() { return 0xFFDDDDDD; } // Pale Gray
+    public int getIconColor() { return 0xFFDDDDDD; }
 
     @Override
     public void registerAbilities() {
-        // Ability 1: Decay Grip (Grab)
-        this.addAbility(new QuirkSystem.Ability("Decay Grip", QuirkSystem.AbilityType.INSTANT, 100, 1, 15.0) {
+        // Ability 1: Decay Grip
+        this.addAbility(new QuirkSystem.Ability("Decay Grip", QuirkSystem.AbilityType.HOLD, 100, 1, 5.0) {
             @Override
             public void onActivate(LivingEntity entity, QuirkSystem.QuirkData data, QuirkSystem.QuirkData.QuirkInstance instance) {
-                float multiplier = getPowerMultiplier(instance.count, data);
+                data.runtimeTags.put("DECAY_GRIP_ACTIVE", "true");
+                entity.swingHand(Hand.MAIN_HAND, true);
+            }
 
-                double range = 3.5;
+            @Override
+            public void onRelease(LivingEntity entity, QuirkSystem.QuirkData data, QuirkSystem.QuirkData.QuirkInstance instance) {
+                if (data.runtimeTags.containsKey("DECAY_GRIP_ACTIVE")) {
+                    data.runtimeTags.remove("DECAY_GRIP_ACTIVE");
+                    this.triggerCooldown(instance);
+                }
+            }
+        });
+
+        // Ability 2: Ground Rot
+        this.addAbility(new QuirkSystem.Ability("Ground Rot", QuirkSystem.AbilityType.HOLD, 150, 10, 10.0) {
+            @Override
+            public boolean isHidden(QuirkSystem.QuirkData data, QuirkSystem.QuirkData.QuirkInstance instance) {
+                return super.isHidden(data, instance) || !instance.awakened;
+            }
+
+            @Override
+            public void onActivate(LivingEntity entity, QuirkSystem.QuirkData data, QuirkSystem.QuirkData.QuirkInstance instance) {
+                // Double check in case of packet spoofing
+                if (!instance.awakened) return;
+
+                float multiplier = getPowerMultiplier(instance.count, data);
+                int radius = 10 + (int)multiplier + (data.meta * 3);
+                BlockPos start = entity.getBlockPos();
+                if (entity.getWorld().isAir(start)) {
+                    start = start.down();
+                }
+
+                data.runtimeTags.put("DECAY_ROT_ACTIVE", "true");
+                data.runtimeTags.put("DECAY_ROT_CENTER_X", String.valueOf(start.getX()));
+                data.runtimeTags.put("DECAY_ROT_CENTER_Y", String.valueOf(start.getY()));
+                data.runtimeTags.put("DECAY_ROT_CENTER_Z", String.valueOf(start.getZ()));
+                data.runtimeTags.put("DECAY_ROT_RADIUS", String.valueOf(radius));
+                data.runtimeTags.put("DECAY_ROT_CURRENT_R", "1.0");
+
+                if (entity.isSneaking()) {
+                    data.runtimeTags.put("DECAY_ROT_MODE", "OBJECT");
+                    BlockState targetState = entity.getWorld().getBlockState(start);
+                    String blockId = Registries.BLOCK.getId(targetState.getBlock()).toString();
+                    data.runtimeTags.put("DECAY_ROT_TARGET_ID", blockId);
+                    if (entity instanceof PlayerEntity p) p.sendMessage(Text.of("§5Decaying Object: " + targetState.getBlock().getName().getString()), true);
+                } else {
+                    data.runtimeTags.put("DECAY_ROT_MODE", "NORMAL");
+                    if (entity instanceof PlayerEntity p) p.sendMessage(Text.of("§8Ground Rot spreading... (Max Radius: " + radius + ")"), true);
+                }
+
+                Set<Long> rim = new HashSet<>();
+                rim.add(start.asLong());
+                data.runtimeTags.put("DECAY_ROT_RIM", serializePosSet(rim));
+                data.runtimeTags.put("DECAY_ROT_VISITED", serializePosSet(rim));
+
+                entity.swingHand(Hand.MAIN_HAND, true);
+            }
+
+            @Override
+            public void onRelease(LivingEntity entity, QuirkSystem.QuirkData data, QuirkSystem.QuirkData.QuirkInstance instance) {
+                if (data.runtimeTags.containsKey("DECAY_ROT_ACTIVE")) {
+                    data.runtimeTags.remove("DECAY_ROT_ACTIVE");
+                    if (entity instanceof PlayerEntity p) p.sendMessage(Text.of("§7Rot stopped."), true);
+                    this.triggerCooldown(instance);
+                }
+            }
+        });
+
+        // Ability 3: Dust Stream
+        this.addAbility(new QuirkSystem.Ability("Dust Stream", QuirkSystem.AbilityType.HOLD, 100, 20, 8.0) {
+            @Override
+            public boolean isHidden(QuirkSystem.QuirkData data, QuirkSystem.QuirkData.QuirkInstance instance) {
+                return super.isHidden(data, instance) || !instance.awakened;
+            }
+
+            @Override
+            public void onActivate(LivingEntity entity, QuirkSystem.QuirkData data, QuirkSystem.QuirkData.QuirkInstance instance) {
+                if (!instance.awakened) return;
+
+                data.runtimeTags.put("DECAY_STREAM_ACTIVE", "true");
+                data.runtimeTags.put("DECAY_STREAM_TICKS", "0");
+                int maxTicks = 100 + (data.meta);
+                data.runtimeTags.put("DECAY_STREAM_MAX", String.valueOf(maxTicks));
+                Vec3d lookDir = entity.getRotationVector();
+                Vec3d horizDir = new Vec3d(lookDir.x, 0, lookDir.z).normalize();
+                BlockPos startPos = entity.getBlockPos().down().add((int)Math.round(horizDir.x), 0, (int)Math.round(horizDir.z));
+
+                data.runtimeTags.put("DECAY_STREAM_DX", String.valueOf(horizDir.x));
+                data.runtimeTags.put("DECAY_STREAM_DZ", String.valueOf(horizDir.z));
+                data.runtimeTags.put("DECAY_STREAM_X", String.valueOf(startPos.getX()));
+                data.runtimeTags.put("DECAY_STREAM_Y", String.valueOf(startPos.getY()));
+                data.runtimeTags.put("DECAY_STREAM_Z", String.valueOf(startPos.getZ()));
+                entity.swingHand(Hand.MAIN_HAND, true);
+            }
+
+            @Override
+            public void onRelease(LivingEntity entity, QuirkSystem.QuirkData data, QuirkSystem.QuirkData.QuirkInstance instance) {
+                if (data.runtimeTags.containsKey("DECAY_STREAM_ACTIVE")) {
+                    data.runtimeTags.remove("DECAY_STREAM_ACTIVE");
+                    this.triggerCooldown(instance);
+                }
+            }
+        });
+
+        // Ability 4: Sudden Pit
+        this.addAbility(new QuirkSystem.Ability("Sudden Pit", QuirkSystem.AbilityType.HOLD, 300, 30, 15.0) {
+            @Override
+            public boolean isHidden(QuirkSystem.QuirkData data, QuirkSystem.QuirkData.QuirkInstance instance) {
+                return super.isHidden(data, instance) || !instance.awakened;
+            }
+
+            @Override
+            public void onActivate(LivingEntity entity, QuirkSystem.QuirkData data, QuirkSystem.QuirkData.QuirkInstance instance) {
+                if (!instance.awakened) return;
+
+                HitResult hit = entity.raycast(20.0, 0, false);
+                if (hit.getType() == HitResult.Type.BLOCK) {
+                    BlockHitResult blockHit = (BlockHitResult) hit;
+                    BlockPos center = blockHit.getBlockPos();
+                    data.runtimeTags.put("DECAY_PIT_ACTIVE", "true");
+                    data.runtimeTags.put("DECAY_PIT_X", String.valueOf(center.getX()));
+                    data.runtimeTags.put("DECAY_PIT_Y", String.valueOf(center.getY()));
+                    data.runtimeTags.put("DECAY_PIT_Z", String.valueOf(center.getZ()));
+                    data.runtimeTags.put("DECAY_PIT_DEPTH", "0");
+                } else {
+                    if (entity instanceof PlayerEntity p) p.sendMessage(Text.of("§cNo block targeted."), true);
+                }
+            }
+
+            @Override
+            public void onRelease(LivingEntity entity, QuirkSystem.QuirkData data, QuirkSystem.QuirkData.QuirkInstance instance) {
+                if (data.runtimeTags.containsKey("DECAY_PIT_ACTIVE")) {
+                    data.runtimeTags.remove("DECAY_PIT_ACTIVE");
+                    this.triggerCooldown(instance);
+                }
+            }
+        });
+    }
+
+    @Override
+    public void onUpdate(LivingEntity entity, QuirkSystem.QuirkData data, QuirkSystem.QuirkData.QuirkInstance instance) {
+        World world = entity.getWorld();
+        if (world.isClient) return;
+        ServerWorld serverWorld = (ServerWorld) world;
+
+        boolean canDestroy = !PlusUltraConfig.get().disableQuirkDestruction;
+        if (data.runtimeTags.containsKey("DESTRUCTION_DISABLED")) canDestroy = false;
+
+        // --- Ability 1: Decay Grip ---
+        if (data.runtimeTags.containsKey("DECAY_GRIP_ACTIVE")) {
+            if (data.currentStamina < 2.0) {
+                data.runtimeTags.remove("DECAY_GRIP_ACTIVE");
+                this.getAbilities().get(0).triggerCooldown(instance);
+                if (entity instanceof PlayerEntity p) p.sendMessage(Text.of("§cOut of Stamina!"), true);
+            } else {
+                data.currentStamina -= 2.0;
+                double range = 4.0;
                 Vec3d start = entity.getCameraPosVec(1.0f);
                 Vec3d direction = entity.getRotationVector();
                 Vec3d end = start.add(direction.multiply(range));
                 Box box = entity.getBoundingBox().stretch(direction.multiply(range)).expand(1.0);
-
                 Entity target = null;
                 double closestDist = range * range;
-
                 for (Entity e : entity.getWorld().getOtherEntities(entity, box)) {
                     if (e instanceof LivingEntity) {
                         float border = e.getTargetingMargin() + 0.5f;
@@ -68,400 +221,247 @@ public class DecayQuirk extends QuirkSystem.Quirk {
                         }
                     }
                 }
-
                 if (target instanceof LivingEntity livingTarget) {
-                    entity.swingHand(Hand.MAIN_HAND, true);
-
-                    float dmg = 6.0f * multiplier;
+                    float multiplier = getPowerMultiplier(instance.count, data);
+                    float dmg = 1.5f * multiplier;
                     livingTarget.damage(entity.getDamageSources().magic(), dmg);
+                    livingTarget.addStatusEffect(new StatusEffectInstance(StatusEffects.WITHER, 40, 0, false, false));
+                    serverWorld.spawnParticles(ParticleTypes.ASH, livingTarget.getX(), livingTarget.getY() + 1, livingTarget.getZ(), 5, 0.2, 0.5, 0.2, 0.05);
+                }
+                serverWorld.spawnParticles(ParticleTypes.SMOKE, start.x + direction.x, start.y + direction.y, start.z + direction.z, 2, 0, 0, 0, 0);
+            }
+            if (entity instanceof ServerPlayerEntity sp) PlusUltraNetwork.sync(sp);
+        }
 
-                    livingTarget.addStatusEffect(new StatusEffectInstance(StatusEffects.SLOWNESS, 40, 10, false, false));
-                    livingTarget.addStatusEffect(new StatusEffectInstance(StatusEffects.WEAKNESS, 40, 5, false, false));
-                    livingTarget.addStatusEffect(new StatusEffectInstance(StatusEffects.WITHER, 100, 1, false, false));
+        // --- Ability 2: Ground Rot ---
+        if (data.runtimeTags.containsKey("DECAY_ROT_ACTIVE")) {
+            if (data.currentStamina < 2.0) {
+                data.runtimeTags.remove("DECAY_ROT_ACTIVE");
+                this.getAbilities().get(1).triggerCooldown(instance);
+                if (entity instanceof PlayerEntity p) p.sendMessage(Text.of("§cOut of Stamina!"), true);
+            } else {
+                data.currentStamina -= 2.0;
+                int centerX = Integer.parseInt(data.runtimeTags.get("DECAY_ROT_CENTER_X"));
+                int centerY = Integer.parseInt(data.runtimeTags.get("DECAY_ROT_CENTER_Y"));
+                int centerZ = Integer.parseInt(data.runtimeTags.get("DECAY_ROT_CENTER_Z"));
+                int maxRadius = Integer.parseInt(data.runtimeTags.get("DECAY_ROT_RADIUS"));
 
-                    for (ItemStack stack : livingTarget.getArmorItems()) {
-                        if (!stack.isEmpty() && stack.isDamageable()) {
-                            int shred = 50 + (int)(50 * multiplier);
-                            stack.damage(shred, livingTarget, (p) -> {});
+                float currentR = Float.parseFloat(data.runtimeTags.getOrDefault("DECAY_ROT_CURRENT_R", "1.0"));
+                if (currentR < maxRadius) {
+                    currentR += 0.25f;
+                    data.runtimeTags.put("DECAY_ROT_CURRENT_R", String.valueOf(currentR));
+                }
+
+                BlockPos centerPos = new BlockPos(centerX, centerY, centerZ);
+                String mode = data.runtimeTags.getOrDefault("DECAY_ROT_MODE", "NORMAL");
+                String targetBlockId = data.runtimeTags.getOrDefault("DECAY_ROT_TARGET_ID", "");
+
+                Set<Long> currentRim = deserializePosSet(data.runtimeTags.get("DECAY_ROT_RIM"));
+                Set<Long> visited = deserializePosSet(data.runtimeTags.get("DECAY_ROT_VISITED"));
+                Set<Long> nextRim = new HashSet<>();
+
+                if (currentRim.isEmpty()) {
+                    data.runtimeTags.remove("DECAY_ROT_ACTIVE");
+                } else {
+                    boolean changesMade = false;
+                    for (Long posLong : currentRim) {
+                        BlockPos pos = BlockPos.fromLong(posLong);
+
+                        for (int dx = -1; dx <= 1; dx++) {
+                            for (int dz = -1; dz <= 1; dz++) {
+                                if (dx == 0 && dz == 0) continue;
+
+                                for (int dy = -1; dy <= 1; dy++) {
+                                    BlockPos neighbor = pos.add(dx, dy, dz);
+                                    long nLong = neighbor.asLong();
+
+                                    if (visited.contains(nLong)) continue;
+                                    if (Math.sqrt(neighbor.getSquaredDistance(centerPos)) > currentR) continue;
+                                    if (neighbor.equals(centerPos) || neighbor.equals(centerPos.down())) {
+                                        visited.add(nLong);
+                                        nextRim.add(nLong);
+                                        continue;
+                                    }
+
+                                    if ("OBJECT".equals(mode)) {
+                                        BlockState neighborState = serverWorld.getBlockState(neighbor);
+                                        String nId = Registries.BLOCK.getId(neighborState.getBlock()).toString();
+
+                                        if (!nId.equals(targetBlockId)) continue;
+
+                                        visited.add(nLong);
+                                        nextRim.add(nLong);
+                                        changesMade = true;
+
+                                        if (serverWorld.random.nextFloat() < 0.3f) {
+                                            serverWorld.spawnParticles(ParticleTypes.ASH, neighbor.getX()+0.5, neighbor.getY()+0.5, neighbor.getZ()+0.5, 1, 0.1, 0.1, 0.1, 0);
+                                        }
+                                        if (canDestroy) {
+                                            serverWorld.breakBlock(neighbor, false);
+                                        }
+                                    } else {
+                                        if (neighbor.getY() < centerY - 5) continue;
+                                        if (serverWorld.isAir(neighbor)) continue;
+
+                                        visited.add(nLong);
+                                        nextRim.add(nLong);
+                                        changesMade = true;
+
+                                        if (serverWorld.random.nextFloat() < 0.3f) {
+                                            serverWorld.spawnParticles(ParticleTypes.ASH, neighbor.getX()+0.5, neighbor.getY()+0.5, neighbor.getZ()+0.5, 1, 0.1, 0.1, 0.1, 0);
+                                        }
+                                        if (canDestroy && isDestructible(serverWorld, neighbor)) {
+                                            serverWorld.breakBlock(neighbor, false);
+                                        }
+                                    }
+
+                                    Box box = new Box(neighbor);
+                                    world.getEntitiesByClass(LivingEntity.class, box, e -> e != entity).forEach(e -> {
+                                        e.damage(entity.getDamageSources().magic(), 4.0f);
+                                        e.addStatusEffect(new StatusEffectInstance(StatusEffects.WITHER, 40, 1));
+                                    });
+                                }
+                            }
                         }
                     }
 
-                    if (entity.getWorld() instanceof ServerWorld world) {
-                        world.spawnParticles(ParticleTypes.ASH, livingTarget.getX(), livingTarget.getY() + 1, livingTarget.getZ(), 20, 0.5, 1.0, 0.5, 0.1);
-                        world.playSound(null, livingTarget.getX(), livingTarget.getY(), livingTarget.getZ(), SoundEvents.BLOCK_SAND_BREAK, SoundCategory.PLAYERS, 1.0f, 0.5f);
+                    if (!nextRim.isEmpty()) {
+                        data.runtimeTags.put("DECAY_ROT_RIM", serializePosSet(nextRim));
+                        data.runtimeTags.put("DECAY_ROT_VISITED", serializePosSet(visited));
+                    } else {
+                        if (currentR >= maxRadius) {
+                            data.runtimeTags.remove("DECAY_ROT_ACTIVE");
+                        }
+                    }
+                }
+            }
+            if (entity instanceof ServerPlayerEntity sp) PlusUltraNetwork.sync(sp);
+        }
+
+        // --- Ability 3: Dust Stream ---
+        if (data.runtimeTags.containsKey("DECAY_STREAM_ACTIVE")) {
+            if (data.currentStamina < 2.0) {
+                data.runtimeTags.remove("DECAY_STREAM_ACTIVE");
+                this.getAbilities().get(2).triggerCooldown(instance);
+                if (entity instanceof PlayerEntity p) p.sendMessage(Text.of("§cOut of Stamina!"), true);
+            } else {
+                data.currentStamina -= 2.0;
+                int ticks = Integer.parseInt(data.runtimeTags.get("DECAY_STREAM_TICKS"));
+                int maxTicks = Integer.parseInt(data.runtimeTags.getOrDefault("DECAY_STREAM_MAX", "20"));
+
+                if (ticks > maxTicks) {
+                    data.runtimeTags.remove("DECAY_STREAM_ACTIVE");
+                } else {
+                    int cx = Integer.parseInt(data.runtimeTags.get("DECAY_STREAM_X"));
+                    int cy = Integer.parseInt(data.runtimeTags.get("DECAY_STREAM_Y"));
+                    int cz = Integer.parseInt(data.runtimeTags.get("DECAY_STREAM_Z"));
+                    BlockPos currentPos = new BlockPos(cx, cy, cz);
+
+                    double dx = Double.parseDouble(data.runtimeTags.get("DECAY_STREAM_DX"));
+                    double dz = Double.parseDouble(data.runtimeTags.get("DECAY_STREAM_DZ"));
+                    BlockPos nextFlat = currentPos.add((int)Math.round(dx), 0, (int)Math.round(dz));
+                    BlockPos finalNext = null;
+                    boolean shouldStop = false;
+
+                    if (!serverWorld.isAir(nextFlat)) {
+                        if (canDestroy && isDestructible(serverWorld, nextFlat)) {
+                            finalNext = nextFlat;
+                            serverWorld.breakBlock(nextFlat, false);
+                            serverWorld.breakBlock(nextFlat.up(), false);
+                        } else {
+                            shouldStop = true;
+                        }
+                    } else {
+                        boolean foundGround = false;
+                        for (int i = 1; i <= 4; i++) {
+                            BlockPos check = nextFlat.down(i);
+                            if (!serverWorld.isAir(check)) {
+                                finalNext = check.up();
+                                foundGround = true;
+                                break;
+                            }
+                        }
+                        if (!foundGround) shouldStop = true;
                     }
 
-                    if (entity instanceof PlayerEntity p) p.sendMessage(Text.of("§7Decayed Target!"), true);
-                } else {
-                    if (entity instanceof PlayerEntity p) p.sendMessage(Text.of("§cMissed Grab!"), true);
-                }
+                    if (shouldStop || finalNext == null) {
+                        data.runtimeTags.remove("DECAY_STREAM_ACTIVE");
+                        serverWorld.spawnParticles(ParticleTypes.SMOKE, cx+0.5, cy+0.5, cz+0.5, 5, 0.1, 0.1, 0.1, 0);
+                        return;
+                    }
 
-                data.currentStamina -= this.getCost();
-                this.triggerCooldown();
-            }
-        });
+                    data.runtimeTags.put("DECAY_STREAM_X", String.valueOf(finalNext.getX()));
+                    data.runtimeTags.put("DECAY_STREAM_Y", String.valueOf(finalNext.getY()));
+                    data.runtimeTags.put("DECAY_STREAM_Z", String.valueOf(finalNext.getZ()));
+                    serverWorld.spawnParticles(ParticleTypes.ASH, finalNext.getX()+0.5, finalNext.getY()+0.5, finalNext.getZ()+0.5, 10, 0.4, 0.4, 0.4, 0);
 
-        // Ability 2: Ground Rot (Infectious Spread)
-        this.addAbility(new QuirkSystem.Ability("Ground Rot", QuirkSystem.AbilityType.INSTANT, 150, 10, 25.0) {
-            @Override
-            public void onActivate(LivingEntity entity, QuirkSystem.QuirkData data, QuirkSystem.QuirkData.QuirkInstance instance) {
-                float multiplier = getPowerMultiplier(instance.count, data);
-
-                // META SCALING: Radius
-                int radius = 4 + (int)multiplier + (data.meta / 5);
-
-                // FIX: Check block BELOW if current is air to ensure we hit the ground
-                BlockPos start = entity.getBlockPos();
-                if (entity.getWorld().isAir(start)) {
-                    start = start.down();
-                }
-
-                // Start the infection
-                data.runtimeTags.put("DECAY_ROT_ACTIVE", "true");
-                data.runtimeTags.put("DECAY_ROT_START", String.valueOf(entity.getWorld().getTime()));
-                data.runtimeTags.put("DECAY_ROT_CENTER_X", String.valueOf(start.getX()));
-                data.runtimeTags.put("DECAY_ROT_CENTER_Y", String.valueOf(start.getY()));
-                data.runtimeTags.put("DECAY_ROT_CENTER_Z", String.valueOf(start.getZ()));
-                data.runtimeTags.put("DECAY_ROT_RADIUS", String.valueOf(radius));
-
-                // Initialize the "Active Rim" with the starting blocks
-                Set<Long> rim = new HashSet<>();
-                rim.add(start.asLong());
-
-                data.runtimeTags.put("DECAY_ROT_RIM", serializePosSet(rim));
-                data.runtimeTags.put("DECAY_ROT_VISITED", serializePosSet(rim));
-
-                entity.swingHand(Hand.MAIN_HAND, true);
-                if (entity instanceof PlayerEntity p) p.sendMessage(Text.of("§8Ground Rot spreading..."), true);
-
-                data.currentStamina -= this.getCost();
-                this.triggerCooldown();
-            }
-        });
-
-        // Ability 3: Dust Stream
-        this.addAbility(new QuirkSystem.Ability("Dust Stream", QuirkSystem.AbilityType.INSTANT, 100, 20, 20.0) {
-            @Override
-            public void onActivate(LivingEntity entity, QuirkSystem.QuirkData data, QuirkSystem.QuirkData.QuirkInstance instance) {
-                data.runtimeTags.put("DECAY_STREAM_ACTIVE", "true");
-                data.runtimeTags.put("DECAY_STREAM_TICKS", "0");
-
-                int maxTicks = 20 + (data.meta / 2);
-                data.runtimeTags.put("DECAY_STREAM_MAX", String.valueOf(maxTicks));
-
-                Vec3d lookDir = entity.getRotationVector();
-                Vec3d horizDir = new Vec3d(lookDir.x, 0, lookDir.z).normalize();
-
-                BlockPos startPos = entity.getBlockPos().down().add((int)Math.round(horizDir.x), 0, (int)Math.round(horizDir.z));
-
-                data.runtimeTags.put("DECAY_STREAM_DX", String.valueOf(horizDir.x));
-                data.runtimeTags.put("DECAY_STREAM_DZ", String.valueOf(horizDir.z));
-                data.runtimeTags.put("DECAY_STREAM_X", String.valueOf(startPos.getX()));
-                data.runtimeTags.put("DECAY_STREAM_Y", String.valueOf(startPos.getY()));
-                data.runtimeTags.put("DECAY_STREAM_Z", String.valueOf(startPos.getZ()));
-
-                entity.swingHand(Hand.MAIN_HAND, true);
-                if (entity.getWorld() instanceof ServerWorld w) {
-                    w.playSound(null, entity.getX(), entity.getY(), entity.getZ(), SoundEvents.BLOCK_SAND_FALL, SoundCategory.PLAYERS, 1.0f, 0.8f);
-                }
-
-                data.currentStamina -= this.getCost();
-                this.triggerCooldown();
-            }
-        });
-
-        // Ability 4: Sudden Pit
-        this.addAbility(new QuirkSystem.Ability("Sudden Pit", QuirkSystem.AbilityType.INSTANT, 300, 30, 40.0) {
-            @Override
-            public void onActivate(LivingEntity entity, QuirkSystem.QuirkData data, QuirkSystem.QuirkData.QuirkInstance instance) {
-                HitResult hit = entity.raycast(20.0, 0, false);
-                if (hit.getType() == HitResult.Type.BLOCK) {
-                    BlockHitResult blockHit = (BlockHitResult) hit;
-                    BlockPos center = blockHit.getBlockPos();
-
-                    if (entity.getWorld() instanceof ServerWorld world) {
-                        boolean canDestroy = !PlusUltraConfig.get().disableQuirkDestruction;
-                        if (data.runtimeTags.containsKey("DESTRUCTION_DISABLED")) canDestroy = false;
-
-                        world.spawnParticles(ParticleTypes.ASH, center.getX()+0.5, center.getY()+1.0, center.getZ()+0.5, 30, 0.5, 0.5, 0.5, 0.1);
-                        world.playSound(null, center, SoundEvents.ENTITY_WITHER_BREAK_BLOCK, SoundCategory.PLAYERS, 1.0f, 0.5f);
-
-                        int depth = 8 + (data.meta / 5);
-
-                        if (canDestroy) {
-                            for (int y = 0; y > -depth; y--) {
-                                for (int x = -1; x <= 1; x++) {
-                                    for (int z = -1; z <= 1; z++) {
-                                        BlockPos p = center.add(x, y, z);
-                                        if (world.getBlockState(p).getHardness(world, p) >= 0) {
-                                            world.breakBlock(p, false);
+                    if (canDestroy) {
+                        for (int xx = -1; xx <= 1; xx++) {
+                            for (int zz = -1; zz <= 1; zz++) {
+                                boolean isCenter = (xx == 0 && zz == 0);
+                                float chance = isCenter ? 1.0f : 0.6f;
+                                if (serverWorld.random.nextFloat() < chance) {
+                                    BlockPos target = finalNext.add(xx, 0, zz);
+                                    if (isDestructible(serverWorld, target) && !serverWorld.isAir(target)) {
+                                        serverWorld.breakBlock(target, false);
+                                    }
+                                    if (serverWorld.random.nextFloat() < (isCenter ? 1.0f : 0.5f)) {
+                                        BlockPos targetUp = target.up();
+                                        if (isDestructible(serverWorld, targetUp) && !serverWorld.isAir(targetUp)) {
+                                            serverWorld.breakBlock(targetUp, false);
                                         }
                                     }
                                 }
                             }
-                        } else {
-                            Box box = new Box(center).expand(2.0, 4.0, 2.0);
-                            world.getEntitiesByClass(LivingEntity.class, box, e -> e != entity).forEach(e -> {
-                                e.damage(entity.getDamageSources().magic(), 10.0f);
-                                e.addStatusEffect(new StatusEffectInstance(StatusEffects.WITHER, 100, 1));
-                            });
                         }
                     }
-                    if (entity instanceof PlayerEntity p) p.sendMessage(Text.of("§8Pit target struck!"), true);
-                } else {
-                    if (entity instanceof PlayerEntity p) p.sendMessage(Text.of("§cNo block targeted."), true);
-                }
-
-                data.currentStamina -= this.getCost();
-                this.triggerCooldown();
-            }
-        });
-
-        // Ability 5: Catastrophe
-        this.addAbility(new QuirkSystem.Ability("Catastrophe", QuirkSystem.AbilityType.HOLD, 1200, 50, 100.0) {
-            @Override
-            public void onRelease(LivingEntity entity, QuirkSystem.QuirkData data, QuirkSystem.QuirkData.QuirkInstance instance) {
-                int maxR = 25 + (data.meta / 2);
-
-                data.runtimeTags.put("DECAY_CAT_ACTIVE", "true");
-                data.runtimeTags.put("DECAY_CAT_TICKS", "0");
-                data.runtimeTags.put("DECAY_CAT_X", String.valueOf(entity.getX()));
-                data.runtimeTags.put("DECAY_CAT_Y", String.valueOf(entity.getY()));
-                data.runtimeTags.put("DECAY_CAT_Z", String.valueOf(entity.getZ()));
-                data.runtimeTags.put("DECAY_CAT_MAX_R", String.valueOf(maxR));
-
-                if (entity instanceof PlayerEntity p) p.sendMessage(Text.of("§4§lCATASTROPHE!"), true);
-                entity.swingHand(Hand.MAIN_HAND, true);
-
-                data.currentStamina -= this.getCost();
-                this.triggerCooldown();
-            }
-
-            @Override
-            public void onActivate(LivingEntity entity, QuirkSystem.QuirkData data, QuirkSystem.QuirkData.QuirkInstance instance) {
-                if (entity.getWorld() instanceof ServerWorld world) {
-                    world.playSound(null, entity.getX(), entity.getY(), entity.getZ(), SoundEvents.BLOCK_SCULK_SHRIEKER_SHRIEK, SoundCategory.PLAYERS, 0.2f, 0.5f);
+                    Box box = new Box(finalNext).expand(1.5, 1.5, 1.5);
+                    world.getEntitiesByClass(LivingEntity.class, box, e -> e != entity).forEach(e -> {
+                        e.damage(entity.getDamageSources().magic(), 12.0f);
+                        e.addStatusEffect(new StatusEffectInstance(StatusEffects.WITHER, 100, 1));
+                    });
+                    data.runtimeTags.put("DECAY_STREAM_TICKS", String.valueOf(ticks + 1));
                 }
             }
-        });
-    }
-
-    @Override
-    public void onUpdate(LivingEntity entity, QuirkSystem.QuirkData data, QuirkSystem.QuirkData.QuirkInstance instance) {
-        World world = entity.getWorld();
-        if (world.isClient) return;
-        ServerWorld serverWorld = (ServerWorld) world;
-        boolean canDestroy = !PlusUltraConfig.get().disableQuirkDestruction;
-        if (data.runtimeTags.containsKey("DESTRUCTION_DISABLED")) canDestroy = false;
-
-        // --- Handle Ground Rot Spread (Connected BFS) ---
-        if (data.runtimeTags.containsKey("DECAY_ROT_ACTIVE")) {
-            int centerX = Integer.parseInt(data.runtimeTags.get("DECAY_ROT_CENTER_X"));
-            int centerY = Integer.parseInt(data.runtimeTags.get("DECAY_ROT_CENTER_Y"));
-            int centerZ = Integer.parseInt(data.runtimeTags.get("DECAY_ROT_CENTER_Z"));
-            int maxRadius = Integer.parseInt(data.runtimeTags.get("DECAY_ROT_RADIUS"));
-            BlockPos centerPos = new BlockPos(centerX, centerY, centerZ);
-
-            // Deserialize state
-            Set<Long> currentRim = deserializePosSet(data.runtimeTags.get("DECAY_ROT_RIM"));
-            Set<Long> visited = deserializePosSet(data.runtimeTags.get("DECAY_ROT_VISITED"));
-            Set<Long> nextRim = new HashSet<>();
-
-            // If rim is empty, stop
-            if (currentRim.isEmpty()) {
-                data.runtimeTags.remove("DECAY_ROT_ACTIVE");
-                data.runtimeTags.remove("DECAY_ROT_RIM");
-                data.runtimeTags.remove("DECAY_ROT_VISITED");
-            } else {
-                boolean changesMade = false;
-
-                for (Long posLong : currentRim) {
-                    BlockPos pos = BlockPos.fromLong(posLong);
-
-                    // Check all 6 neighbors
-                    for (Direction dir : Direction.values()) {
-                        BlockPos neighbor = pos.offset(dir);
-                        long nLong = neighbor.asLong();
-
-                        // 1. Don't revisit
-                        if (visited.contains(nLong)) continue;
-
-                        // 2. Radius Check
-                        if (Math.sqrt(neighbor.getSquaredDistance(centerPos)) > maxRadius) continue;
-
-                        // 3. Safety Check (Center & Below Center are safe)
-                        if (neighbor.equals(centerPos) || neighbor.equals(centerPos.down())) {
-                            visited.add(nLong); // Mark visited so we don't check again
-                            nextRim.add(nLong); // Continue spreading FROM safe spot
-                            continue;
-                        }
-
-                        // 4. Air Rule: Only spread to non-air blocks (Connected)
-                        // FIX: If it's air, we don't spread INTO it, nor THROUGH it.
-                        if (serverWorld.isAir(neighbor)) {
-                            continue;
-                        } else {
-                            // Valid solid block
-                            visited.add(nLong);
-                            nextRim.add(nLong);
-                            changesMade = true;
-
-                            // VFX
-                            if (serverWorld.random.nextFloat() < 0.3f) {
-                                serverWorld.spawnParticles(ParticleTypes.ASH, neighbor.getX()+0.5, neighbor.getY()+0.5, neighbor.getZ()+0.5, 1, 0.1, 0.1, 0.1, 0);
-                            }
-
-                            // Destruction
-                            if (canDestroy && isDestructible(serverWorld, neighbor)) {
-                                serverWorld.breakBlock(neighbor, false);
-                            }
-
-                            // Damage
-                            Box box = new Box(neighbor);
-                            world.getEntitiesByClass(LivingEntity.class, box, e -> e != entity).forEach(e -> {
-                                e.damage(entity.getDamageSources().magic(), 4.0f);
-                                e.addStatusEffect(new StatusEffectInstance(StatusEffects.WITHER, 40, 1));
-                            });
-                        }
-                    }
-                }
-
-                if (!changesMade || nextRim.isEmpty()) {
-                    data.runtimeTags.remove("DECAY_ROT_ACTIVE");
-                } else {
-                    // Serialize and save for next tick
-                    data.runtimeTags.put("DECAY_ROT_RIM", serializePosSet(nextRim));
-
-                    // Optimization: We only need 'visited' to block backtracking.
-                    // Since we are adding to the string, we just append.
-                    String visitedStr = data.runtimeTags.get("DECAY_ROT_VISITED");
-                    if (visitedStr.length() < 30000) { // Safety cap for NBT string
-                        data.runtimeTags.put("DECAY_ROT_VISITED", serializePosSet(visited));
-                    } else {
-                        // Emergency stop if too big
-                        data.runtimeTags.remove("DECAY_ROT_ACTIVE");
-                    }
-                }
-            }
+            if (entity instanceof ServerPlayerEntity sp) PlusUltraNetwork.sync(sp);
         }
 
-        // --- Handle Dust Stream Spread ---
-        if (data.runtimeTags.containsKey("DECAY_STREAM_ACTIVE")) {
-            int ticks = Integer.parseInt(data.runtimeTags.get("DECAY_STREAM_TICKS"));
-            int maxTicks = Integer.parseInt(data.runtimeTags.getOrDefault("DECAY_STREAM_MAX", "20"));
-
-            if (ticks > maxTicks) {
-                data.runtimeTags.remove("DECAY_STREAM_ACTIVE");
+        // --- Ability 4: Sudden Pit ---
+        if (data.runtimeTags.containsKey("DECAY_PIT_ACTIVE")) {
+            if (data.currentStamina < 3.0) {
+                data.runtimeTags.remove("DECAY_PIT_ACTIVE");
+                this.getAbilities().get(3).triggerCooldown(instance);
+                if (entity instanceof PlayerEntity p) p.sendMessage(Text.of("§cOut of Stamina!"), true);
             } else {
-                int cx = Integer.parseInt(data.runtimeTags.get("DECAY_STREAM_X"));
-                int cy = Integer.parseInt(data.runtimeTags.get("DECAY_STREAM_Y"));
-                int cz = Integer.parseInt(data.runtimeTags.get("DECAY_STREAM_Z"));
-                BlockPos currentPos = new BlockPos(cx, cy, cz);
+                data.currentStamina -= 3.0;
+                int cx = Integer.parseInt(data.runtimeTags.get("DECAY_PIT_X"));
+                int cy = Integer.parseInt(data.runtimeTags.get("DECAY_PIT_Y"));
+                int cz = Integer.parseInt(data.runtimeTags.get("DECAY_PIT_Z"));
+                int depth = Integer.parseInt(data.runtimeTags.get("DECAY_PIT_DEPTH"));
+                int maxDepth = 8 + (data.meta / 5);
 
-                double dx = Double.parseDouble(data.runtimeTags.get("DECAY_STREAM_DX"));
-                double dz = Double.parseDouble(data.runtimeTags.get("DECAY_STREAM_DZ"));
-
-                BlockPos nextFlat = currentPos.add((int)Math.round(dx), 0, (int)Math.round(dz));
-                BlockPos finalNext = null;
-                boolean shouldStop = false;
-
-                if (!serverWorld.isAir(nextFlat)) {
-                    if (canDestroy && isDestructible(serverWorld, nextFlat)) {
-                        finalNext = nextFlat;
-                        serverWorld.breakBlock(nextFlat, false);
-                        serverWorld.breakBlock(nextFlat.up(), false);
-                    } else {
-                        shouldStop = true;
-                    }
-                } else {
-                    boolean foundGround = false;
-                    for (int i = 1; i <= 4; i++) {
-                        BlockPos check = nextFlat.down(i);
-                        if (!serverWorld.isAir(check)) {
-                            finalNext = check.up();
-                            foundGround = true;
-                            break;
-                        }
-                    }
-                    if (!foundGround) shouldStop = true;
-                }
-
-                if (shouldStop || finalNext == null) {
-                    data.runtimeTags.remove("DECAY_STREAM_ACTIVE");
-                    serverWorld.spawnParticles(ParticleTypes.SMOKE, cx+0.5, cy+0.5, cz+0.5, 5, 0.1, 0.1, 0.1, 0);
-                    return;
-                }
-
-                data.runtimeTags.put("DECAY_STREAM_X", String.valueOf(finalNext.getX()));
-                data.runtimeTags.put("DECAY_STREAM_Y", String.valueOf(finalNext.getY()));
-                data.runtimeTags.put("DECAY_STREAM_Z", String.valueOf(finalNext.getZ()));
-
-                if (finalNext.getY() < cy) {
-                    for (int y = cy; y > finalNext.getY(); y--) {
-                        serverWorld.spawnParticles(ParticleTypes.ASH, finalNext.getX()+0.5, y+0.5, finalNext.getZ()+0.5, 5, 0.2, 0.2, 0.2, 0);
-                    }
-                }
-
-                serverWorld.spawnParticles(ParticleTypes.ASH, finalNext.getX()+0.5, finalNext.getY()+0.5, finalNext.getZ()+0.5, 10, 0.4, 0.4, 0.4, 0);
-
-                // Destructive: 3x3 Rough Area
-                if (canDestroy) {
-                    for (int xx = -1; xx <= 1; xx++) {
-                        for (int zz = -1; zz <= 1; zz++) {
-                            boolean isCenter = (xx == 0 && zz == 0);
-                            float chance = isCenter ? 1.0f : 0.6f;
-
-                            if (serverWorld.random.nextFloat() < chance) {
-                                BlockPos target = finalNext.add(xx, 0, zz);
-                                if (isDestructible(serverWorld, target) && !serverWorld.isAir(target)) {
-                                    serverWorld.breakBlock(target, false);
-                                }
-                                if (serverWorld.random.nextFloat() < (isCenter ? 1.0f : 0.5f)) {
-                                    BlockPos targetUp = target.up();
-                                    if (isDestructible(serverWorld, targetUp) && !serverWorld.isAir(targetUp)) {
-                                        serverWorld.breakBlock(targetUp, false);
-                                    }
-                                }
+                if (depth < maxDepth && canDestroy) {
+                    BlockPos currentCenter = new BlockPos(cx, cy - depth, cz);
+                    for (int x = -1; x <= 1; x++) {
+                        for (int z = -1; z <= 1; z++) {
+                            BlockPos p = currentCenter.add(x, 0, z);
+                            if (isDestructible(serverWorld, p) && !serverWorld.isAir(p)) {
+                                serverWorld.breakBlock(p, false);
+                                serverWorld.spawnParticles(ParticleTypes.ASH, p.getX()+0.5, p.getY()+0.5, p.getZ()+0.5, 2, 0.2, 0.2, 0.2, 0);
                             }
                         }
                     }
+                    serverWorld.playSound(null, currentCenter, SoundEvents.ENTITY_WITHER_BREAK_BLOCK, SoundCategory.PLAYERS, 0.5f, 0.5f);
+                    data.runtimeTags.put("DECAY_PIT_DEPTH", String.valueOf(depth + 1));
                 }
-
-                Box box = new Box(finalNext).expand(1.5, 1.5, 1.5);
+                BlockPos damageCenter = new BlockPos(cx, cy, cz);
+                Box box = new Box(damageCenter).expand(2.0, 10.0, 2.0);
                 world.getEntitiesByClass(LivingEntity.class, box, e -> e != entity).forEach(e -> {
-                    e.damage(entity.getDamageSources().magic(), 12.0f);
-                    e.addStatusEffect(new StatusEffectInstance(StatusEffects.WITHER, 100, 1));
+                    e.damage(entity.getDamageSources().magic(), 5.0f);
+                    e.addStatusEffect(new StatusEffectInstance(StatusEffects.WITHER, 40, 1));
                 });
-
-                data.runtimeTags.put("DECAY_STREAM_TICKS", String.valueOf(ticks + 1));
             }
-        }
-
-        // --- Handle Catastrophe Spread (Keep simple sphere for Ultimate) ---
-        if (data.runtimeTags.containsKey("DECAY_CAT_ACTIVE")) {
-            int ticks = Integer.parseInt(data.runtimeTags.get("DECAY_CAT_TICKS"));
-            double sx = Double.parseDouble(data.runtimeTags.get("DECAY_CAT_X"));
-            double sy = Double.parseDouble(data.runtimeTags.get("DECAY_CAT_Y"));
-            double sz = Double.parseDouble(data.runtimeTags.get("DECAY_CAT_Z"));
-            int maxR = Integer.parseInt(data.runtimeTags.getOrDefault("DECAY_CAT_MAX_R", "25"));
-
-            int currentR = ticks / 2;
-
-            if (currentR > maxR) {
-                data.runtimeTags.remove("DECAY_CAT_ACTIVE");
-            } else {
-                if (currentR % 2 == 0) {
-                    serverWorld.spawnParticles(ParticleTypes.ASH, sx, sy+1, sz, currentR * 10, currentR/2.0, 1, currentR/2.0, 0.1);
-                    serverWorld.playSound(null, sx, sy, sz, SoundEvents.BLOCK_SCULK_BREAK, SoundCategory.HOSTILE, 1.0f, 0.5f);
-                }
-
-                if (canDestroy) {
-                    destroySphere(serverWorld, new BlockPos((int)sx, (int)sy, (int)sz), currentR);
-                }
-                damageEntitiesInRadius(serverWorld, new Vec3d(sx, sy, sz), currentR, entity, 10.0f);
-
-                data.runtimeTags.put("DECAY_CAT_TICKS", String.valueOf(ticks + 1));
-            }
+            if (entity instanceof ServerPlayerEntity sp) PlusUltraNetwork.sync(sp);
         }
     }
 
@@ -489,31 +489,5 @@ public class DecayQuirk extends QuirkSystem.Quirk {
             } catch(NumberFormatException e) {}
         }
         return set;
-    }
-
-    private void destroySphere(ServerWorld world, BlockPos center, int radius) {
-        for (int x = -radius; x <= radius; x++) {
-            for (int y = -radius; y <= radius; y++) {
-                for (int z = -radius; z <= radius; z++) {
-                    double d = Math.sqrt(x*x + y*y + z*z);
-                    if (d <= radius && d > radius - 1.5) {
-                        BlockPos p = center.add(x, y, z);
-                        if (world.getBlockState(p).getHardness(world, p) >= 0 && !world.isAir(p)) {
-                            if (world.random.nextFloat() < 0.6f) {
-                                world.breakBlock(p, false);
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    private void damageEntitiesInRadius(ServerWorld world, Vec3d center, double radius, LivingEntity source, float damage) {
-        Box box = new Box(center.x - radius, center.y - radius, center.z - radius, center.x + radius, center.y + radius, center.z + radius);
-        world.getEntitiesByClass(LivingEntity.class, box, e -> e != source && e.squaredDistanceTo(center) <= radius * radius).forEach(e -> {
-            e.damage(source.getDamageSources().magic(), damage);
-            e.addStatusEffect(new StatusEffectInstance(StatusEffects.WITHER, 60, 1));
-        });
     }
 }

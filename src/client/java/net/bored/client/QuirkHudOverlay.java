@@ -49,11 +49,8 @@ public class QuirkHudOverlay implements HudRenderCallback {
         int height = context.getScaledWindowHeight();
         TextRenderer font = client.textRenderer;
 
-        // --- RENDER STOCKPILE BAR (Left Side) ---
-        // Support Stockpile via direct ID OR via merged OFA
         boolean showStockpile = "plusultra:stockpile".equals(currentQuirkInstance.quirkId);
 
-        // If it's OFA and merged with Stockpile, show the bar
         if ("plusultra:one_for_all".equals(currentQuirkInstance.quirkId)) {
             if (currentQuirkInstance.persistentData.contains("FirstQuirk") &&
                     "plusultra:stockpile".equals(currentQuirkInstance.persistentData.getString("FirstQuirk"))) {
@@ -73,7 +70,6 @@ public class QuirkHudOverlay implements HudRenderCallback {
         double currentStamina = data.currentStamina;
         if (maxStamina <= 0) maxStamina = 1;
 
-        // --- STAMINA BAR ---
         context.fill(x, y, rightEdge, y + BAR_HEIGHT, BACKGROUND_COLOR);
         int totalFillWidth = (int) ((currentStamina / maxStamina) * BAR_WIDTH);
         if (totalFillWidth > BAR_WIDTH) totalFillWidth = BAR_WIDTH;
@@ -84,20 +80,22 @@ public class QuirkHudOverlay implements HudRenderCallback {
         String staminaNum = String.format("%d/%d", (int)currentStamina, (int)maxStamina);
         context.drawText(font, staminaNum, rightEdge - font.getWidth(staminaNum), y - 10, PASSIVE_COLOR, true);
 
-        // --- ABILITIES ---
         int currentY = y - 25;
 
-        // UPDATED: Fetch abilities dynamically based on instance (needed for OFA)
         List<QuirkSystem.Ability> abilities = realQuirk.getAbilities(currentQuirkInstance);
         int selectedSlot = data.getSelectedAbilityIndex();
 
         for (int i = abilities.size() - 1; i >= 0; i--) {
-            if (i >= abilities.size()) continue; // Safety
+            if (i >= abilities.size()) continue;
 
             QuirkSystem.Ability ability = abilities.get(i);
+
+            // NEW: Check if hidden
+            if (ability.isHidden(data, currentQuirkInstance)) continue;
+
             boolean isSelected = (i == selectedSlot);
             boolean isLocked = instanceIsLocked(currentQuirkInstance) || data.level < ability.getRequiredLevel();
-            boolean onCooldown = ability.getCurrentCooldown() > 0;
+            boolean onCooldown = ability.getCurrentCooldown(currentQuirkInstance) > 0;
 
             String displayText = ability.getName();
             int textColor;
@@ -108,7 +106,7 @@ public class QuirkHudOverlay implements HudRenderCallback {
                 textColor = LOCKED_COLOR;
             } else {
                 if (onCooldown) {
-                    float seconds = ability.getCurrentCooldown() / 20.0f;
+                    float seconds = ability.getCurrentCooldown(currentQuirkInstance) / 20.0f;
                     displayText += String.format(" [%.1fs]", seconds);
                     textColor = LOCKED_COLOR;
                 } else {
@@ -125,7 +123,6 @@ public class QuirkHudOverlay implements HudRenderCallback {
         int headerY = currentY - 3;
         String quirkDisplayName = realQuirk.getId().getPath().replace("_", " ");
 
-        // Rename display if Merged
         if ("plusultra:one_for_all".equals(currentQuirkInstance.quirkId)) {
             quirkDisplayName = "One For All";
         } else {
