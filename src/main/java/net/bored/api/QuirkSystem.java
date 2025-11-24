@@ -5,6 +5,8 @@ import net.minecraft.entity.LivingEntity;
 import net.minecraft.entity.attribute.EntityAttributeInstance;
 import net.minecraft.entity.attribute.EntityAttributeModifier;
 import net.minecraft.entity.attribute.EntityAttributes;
+import net.minecraft.entity.effect.StatusEffectInstance;
+import net.minecraft.entity.effect.StatusEffects;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.nbt.NbtCompound;
 import net.minecraft.nbt.NbtElement;
@@ -281,6 +283,41 @@ public class QuirkSystem {
             // Ensure Blood Type exists
             if (bloodType == null || bloodType.isEmpty()) {
                 assignRandomBloodType();
+            }
+
+            // --- BLOODCURDLE PARALYSIS LOGIC ---
+            if (runtimeTags.containsKey("BLOODCURDLE_ACTIVE")) {
+                int timer = Integer.parseInt(runtimeTags.getOrDefault("BLOODCURDLE_TIMER", "0"));
+                if (timer > 0) {
+                    runtimeTags.put("BLOODCURDLE_TIMER", String.valueOf(timer - 1));
+
+                    // Apply Paralysis Effects
+                    entity.addStatusEffect(new StatusEffectInstance(StatusEffects.SLOWNESS, 10, 5, false, false));
+                    entity.addStatusEffect(new StatusEffectInstance(StatusEffects.WEAKNESS, 10, 5, false, false));
+                    entity.addStatusEffect(new StatusEffectInstance(StatusEffects.MINING_FATIGUE, 10, 5, false, false));
+                    entity.addStatusEffect(new StatusEffectInstance(StatusEffects.JUMP_BOOST, 10, 250, false, false)); // Negative jump
+
+                    // Stop movement (Server side mainly)
+                    if (!entity.getWorld().isClient) {
+                        entity.setVelocity(0, entity.getVelocity().y, 0);
+                        entity.velocityModified = true;
+                    }
+                } else {
+                    runtimeTags.remove("BLOODCURDLE_ACTIVE");
+                    if (entity instanceof PlayerEntity p) {
+                        p.sendMessage(Text.of("§aThe paralysis wears off."), true);
+                    }
+                }
+            }
+
+            // --- ANTIGEN SWAP COOLDOWN ---
+            if (runtimeTags.containsKey("ANTIGEN_SWAPPED_RECENTLY")) {
+                int timer = Integer.parseInt(runtimeTags.get("ANTIGEN_SWAPPED_RECENTLY"));
+                if (timer > 0) {
+                    runtimeTags.put("ANTIGEN_SWAPPED_RECENTLY", String.valueOf(timer - 1));
+                } else {
+                    runtimeTags.remove("ANTIGEN_SWAPPED_RECENTLY");
+                }
             }
 
             if (!entity.getWorld().isClient) {

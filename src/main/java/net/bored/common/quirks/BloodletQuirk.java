@@ -65,6 +65,14 @@ public class BloodletQuirk extends QuirkSystem.Quirk {
                     e.addStatusEffect(new StatusEffectInstance(StatusEffects.WEAKNESS, 60, 1));
                 });
 
+                // COMBO: Antigen Swap -> Bloodlet Purge
+                if (data.runtimeTags.containsKey("BLOODCURDLE_ACTIVE") && data.runtimeTags.containsKey("ANTIGEN_SWAPPED_RECENTLY")) {
+                    data.runtimeTags.remove("BLOODCURDLE_ACTIVE");
+                    if (entity instanceof PlayerEntity p) {
+                        p.sendMessage(Text.of("§aParalysis purged by expelling modified blood!"), true);
+                    }
+                }
+
                 data.currentStamina -= this.getCost();
                 if (entity instanceof PlayerEntity p) p.sendMessage(Text.of("§4[Bloodlet] Expelling..."), true);
 

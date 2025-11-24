@@ -8,6 +8,10 @@ import net.fabricmc.fabric.api.networking.v1.PacketByteBufs;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.minecraft.entity.LivingEntity;
 import net.minecraft.entity.player.PlayerEntity;
+import net.minecraft.item.AxeItem;
+import net.minecraft.item.ItemStack;
+import net.minecraft.item.SwordItem;
+import net.minecraft.item.ToolItem;
 import net.minecraft.nbt.NbtCompound;
 import net.minecraft.network.PacketByteBuf;
 import net.minecraft.server.network.ServerPlayerEntity;
@@ -66,8 +70,51 @@ public class QuirkAttackHandler {
                 return ActionResult.SUCCESS;
             }
 
+            // --- BLOODCURDLE LOGIC (Passive on Attack) ---
+            checkBloodcurdleDraw(player, target);
+
             return ActionResult.PASS;
         });
+    }
+
+    public static void checkBloodcurdleDraw(LivingEntity attacker, LivingEntity target) {
+        QuirkSystem.QuirkData data = ((IQuirkDataAccessor)attacker).getQuirkData();
+        boolean hasBloodcurdle = false;
+        for(QuirkSystem.QuirkData.QuirkInstance q : data.getQuirks()) {
+            if (q.quirkId.equals("plusultra:bloodcurdle")) {
+                hasBloodcurdle = true;
+                break;
+            }
+        }
+
+        if (hasBloodcurdle) {
+            // Check weapon
+            ItemStack stack = attacker.getMainHandStack();
+            boolean isSharp = stack.getItem() instanceof SwordItem ||
+                    stack.getItem() instanceof AxeItem ||
+                    stack.getItem().getTranslationKey().contains("scythe") ||
+                    stack.getItem().getTranslationKey().contains("knife") ||
+                    stack.getItem().getTranslationKey().contains("dagger");
+
+            if (isSharp) {
+                // Chance: 10% base + (Meta * 2%)
+                float chance = 0.10f + (data.meta * 0.02f);
+
+                if (attacker.getWorld().random.nextFloat() < chance) {
+                    QuirkSystem.QuirkData targetData = ((IQuirkDataAccessor) target).getQuirkData();
+                    String bloodType = targetData.bloodType;
+                    if (bloodType == null || bloodType.isEmpty()) bloodType = "O+";
+
+                    data.runtimeTags.put("BLOOD_STOLEN_FROM", target.getUuid().toString());
+                    data.runtimeTags.put("BLOOD_STOLEN_TYPE", bloodType);
+
+                    if (attacker instanceof PlayerEntity p) {
+                        // Obscured feedback
+                        p.sendMessage(Text.of("§cBlade bloodied!"), true);
+                    }
+                }
+            }
+        }
     }
 
     private static void handleCopy(PlayerEntity attacker, QuirkSystem.QuirkData attackerData, LivingEntity target, QuirkSystem.QuirkData targetData, int slotIndex) {

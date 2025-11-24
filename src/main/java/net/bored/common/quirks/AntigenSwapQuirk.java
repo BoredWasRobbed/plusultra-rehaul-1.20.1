@@ -41,6 +41,27 @@ public class AntigenSwapQuirk extends QuirkSystem.Quirk {
                     p.sendMessage(Text.of("§c[Antigen] Blood Type changed to: " + nextType), true);
                 }
 
+                // Mark as swapped recently for Bloodlet combo
+                data.runtimeTags.put("ANTIGEN_SWAPPED_RECENTLY", "100"); // 5 seconds
+
+                // Check for Bloodcurdle Paralysis
+                if (data.runtimeTags.containsKey("BLOODCURDLE_ACTIVE")) {
+                    int newDuration = BloodcurdleQuirk.calculateParalysisTicks(nextType);
+                    int currentTimer = Integer.parseInt(data.runtimeTags.getOrDefault("BLOODCURDLE_TIMER", "0"));
+
+                    // "switching blood type lowers the time respectively"
+                    // If new max duration is lower than current remaining, clamp it?
+                    // Or does it scale the remaining percentage?
+                    // Simplest interpretation: Clamp timer to the new type's max duration if it exceeds it.
+                    // But prompt says "lowers the time", implying if I switch to a resistant type, I suffer less.
+                    if (newDuration < currentTimer) {
+                        data.runtimeTags.put("BLOODCURDLE_TIMER", String.valueOf(newDuration));
+                        if (entity instanceof PlayerEntity p) {
+                            p.sendMessage(Text.of("§eParalysis duration reduced due to blood swap!"), true);
+                        }
+                    }
+                }
+
                 // Sync data to update client (vital for potential future HUDs or logic)
                 if (entity instanceof ServerPlayerEntity sp) {
                     PlusUltraNetwork.sync(sp);

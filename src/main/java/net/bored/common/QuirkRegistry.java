@@ -22,6 +22,7 @@ public class QuirkRegistry {
         register(new AntigenSwapQuirk());
         register(new BloodletQuirk());
         register(new LuminescenceQuirk());
+        register(new BloodcurdleQuirk());
     }
 
     public static void register(QuirkSystem.Quirk quirk) {

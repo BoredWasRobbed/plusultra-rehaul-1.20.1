@@ -3,9 +3,11 @@ package net.bored.mixin;
 import net.bored.api.IQuirkDataAccessor;
 import net.bored.api.QuirkSystem;
 import net.bored.common.PlusUltraNetwork;
+import net.bored.common.QuirkAttackHandler;
 import net.bored.common.QuirkRegistry;
 import net.bored.common.UniqueQuirkState;
 import net.bored.config.PlusUltraConfig;
+import net.minecraft.entity.Entity;
 import net.minecraft.entity.EntityData;
 import net.minecraft.entity.LivingEntity;
 import net.minecraft.entity.SpawnReason;
@@ -195,6 +197,14 @@ public class MobEntityMixin {
                     }
                 }
             }
+        }
+    }
+
+    @Inject(method = "tryAttack", at = @At("RETURN"))
+    public void onTryAttack(Entity target, CallbackInfoReturnable<Boolean> cir) {
+        if (cir.getReturnValue() && target instanceof LivingEntity livingTarget) {
+            MobEntity mob = (MobEntity)(Object)this;
+            QuirkAttackHandler.checkBloodcurdleDraw(mob, livingTarget);
         }
     }
 }
