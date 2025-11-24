@@ -125,10 +125,8 @@ public class PlusUltraConfig {
             writer.println("[General]");
             writer.println("# If true, quirks like Stockpile will not break blocks.");
             writer.println("disableQuirkDestruction = " + INSTANCE.disableQuirkDestruction);
-            writer.println("");
             writer.println("# If true, One For All and All For One can only be held by one player per world.");
             writer.println("limitUniqueQuirks = " + INSTANCE.limitUniqueQuirks);
-            writer.println("");
             writer.println("# If true, ALL quirks (except lower tier ones like Regen) can only be held by one entity per world.");
             writer.println("uniqueQuirks = " + INSTANCE.uniqueQuirks);
             writer.println("");
@@ -136,13 +134,10 @@ public class PlusUltraConfig {
             writer.println("[Mob Spawning]");
             writer.println("# If true, hostile monsters can naturally spawn with quirks.");
             writer.println("mobsCanSpawnWithQuirks = " + INSTANCE.mobsCanSpawnWithQuirks);
-            writer.println("");
             writer.println("# The chance (0.0 to 1.0) for a hostile mob to spawn with a quirk. 0.05 = 5%.");
             writer.println("mobQuirkChance = " + INSTANCE.mobQuirkChance);
-            writer.println("");
             writer.println("# If true, villagers can naturally spawn with quirks.");
             writer.println("villagersCanSpawnWithQuirks = " + INSTANCE.villagersCanSpawnWithQuirks);
-            writer.println("");
             writer.println("# The chance (0.0 to 1.0) for a villager to spawn with a quirk. 0.20 = 20%.");
             writer.println("villagerQuirkChance = " + INSTANCE.villagerQuirkChance);
             writer.println("");

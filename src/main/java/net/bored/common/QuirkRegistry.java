@@ -17,7 +17,8 @@ public class QuirkRegistry {
         register(new OneForAllQuirk());
         register(new DecayQuirk());
         register(new WarpGateQuirk());
-        register(new CopyQuirk()); // Added
+        register(new CopyQuirk());
+        register(new QuirklessQuirk());
     }
 
     public static void register(QuirkSystem.Quirk quirk) {
