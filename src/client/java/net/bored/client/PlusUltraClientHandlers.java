@@ -124,21 +124,7 @@ public class PlusUltraClientHandlers implements ClientModInitializer {
         });
     }
 
-    private static String getFormalName(String quirkId) {
-        try {
-            Identifier id = new Identifier(quirkId);
-            String path = id.getPath().replace("_", " ");
-            StringBuilder sb = new StringBuilder();
-            for (String s : path.split(" ")) {
-                if (!s.isEmpty()) {
-                    sb.append(Character.toUpperCase(s.charAt(0))).append(s.substring(1).toLowerCase()).append(" ");
-                }
-            }
-            return sb.toString().trim();
-        } catch (Exception e) {
-            return quirkId;
-        }
-    }
+    // Removed private getFormalName method to avoid duplication
 
     // --- STEAL SELECTION SCREEN ---
     public static class StealSelectionScreen extends Screen {
@@ -176,7 +162,8 @@ public class PlusUltraClientHandlers implements ClientModInitializer {
                     boolean isHovered = (mouseX >= startX + 10 && mouseX <= endX - 10 && mouseY >= currentY && mouseY <= currentY + 20);
                     int color = isHovered ? 0xFFFF5555 : 0xFFFFFFFF;
                     if(isHovered) context.fill(startX + 10, currentY, endX - 10, currentY + 20, 0x33FF0000);
-                    context.drawText(textRenderer, getFormalName(qId), startX + 20, currentY + 6, color, true);
+                    // UPDATED: Use QuirkSystem for name
+                    context.drawText(textRenderer, QuirkSystem.getFormalName(qId), startX + 20, currentY + 6, color, true);
                 }
                 currentY += 25;
             }
@@ -291,7 +278,8 @@ public class PlusUltraClientHandlers implements ClientModInitializer {
 
                     context.fill(startX + 10, currentY, endX - 10, currentY + 20, backgroundColor);
 
-                    String formalName = getFormalName(qi.quirkId);
+                    // UPDATED: Use QuirkSystem for name (displays owner)
+                    String formalName = QuirkSystem.getFormalName(qi);
                     if (qi.count > 1) formalName += " x" + qi.count;
                     if (qi.innate) formalName += " (Innate)";
                     if (isSelected) formalName = "▶ " + formalName;

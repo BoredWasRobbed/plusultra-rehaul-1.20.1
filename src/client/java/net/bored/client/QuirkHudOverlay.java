@@ -167,15 +167,8 @@ public class QuirkHudOverlay implements HudRenderCallback {
 
         int headerY = currentY - 3;
 
-        // Display Name: If active slot, use the copied name. If not, use "Copy".
-        // 'renderInstance' is the fake one if active, so its ID is the copied one.
-        String quirkDisplayName = realQuirk.getId().getPath().replace("_", " ");
-
-        StringBuilder sb = new StringBuilder();
-        for (String s : quirkDisplayName.split(" ")) {
-            if (!s.isEmpty()) sb.append(Character.toUpperCase(s.charAt(0))).append(s.substring(1).toLowerCase()).append(" ");
-        }
-        quirkDisplayName = sb.toString().trim();
+        // UPDATED: Use QuirkSystem to get name (handles Original Owner tag)
+        String quirkDisplayName = QuirkSystem.getFormalName(renderInstance);
 
         int nameColor = 0xFFFFFF;
         if (currentQuirkInstance.isLocked) {

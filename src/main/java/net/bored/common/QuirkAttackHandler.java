@@ -102,7 +102,7 @@ public class QuirkAttackHandler {
         }
 
         if (copyInstance != null) {
-            String quirkName = getFormalName(targetQuirk.quirkId);
+            String quirkName = QuirkSystem.getFormalName(targetQuirk.quirkId);
 
             // 1. DUPLICATE CHECK
             for (int i = 0; i < 5; i++) {
@@ -173,7 +173,7 @@ public class QuirkAttackHandler {
                 QuirkSystem.QuirkData.QuirkInstance targetExisting = targetData.getQuirks().get(0);
                 firstUserQuirkId = targetExisting.quirkId;
                 targetData.getQuirks().clear();
-                attacker.sendMessage(Text.of("§eFusing Bestowal with " + getFormalName(firstUserQuirkId) + "..."), false);
+                attacker.sendMessage(Text.of("§eFusing Bestowal with " + QuirkSystem.getFormalName(firstUserQuirkId) + "..."), false);
             } else {
                 firstUserQuirkId = "";
             }
@@ -211,12 +211,11 @@ public class QuirkAttackHandler {
 
         attacker.sendMessage(Text.of("§eYou have passed on the torch."), true);
         if (target instanceof PlayerEntity tp) {
-            String mergedName = (firstUserQuirkId != null && !firstUserQuirkId.isEmpty()) ? getFormalName(firstUserQuirkId) : "Power";
+            String mergedName = (firstUserQuirkId != null && !firstUserQuirkId.isEmpty()) ? QuirkSystem.getFormalName(firstUserQuirkId) : "Power";
             tp.sendMessage(Text.of("§bYou have received One For All! (Gen " + newGen + ")"), false);
             if (newGen == 1) tp.sendMessage(Text.of("§7Bestowal has merged with " + mergedName + "."), false);
         }
 
-        // FIXED: Now syncs properly regardless of if target is player or mob
         PlusUltraNetwork.sync(attacker);
         PlusUltraNetwork.sync(target);
     }
@@ -241,9 +240,15 @@ public class QuirkAttackHandler {
         int index = targetData.getQuirks().size() - 1;
         QuirkSystem.QuirkData.QuirkInstance stolen = targetData.getQuirks().get(index);
         String quirkId = stolen.quirkId;
-        String quirkName = getFormalName(quirkId);
+        String quirkName = QuirkSystem.getFormalName(quirkId);
 
-        attackerData.addQuirk(quirkId);
+        // Tag the quirk with the original owner's name if stolen from a player
+        NbtCompound dataToTransfer = stolen.persistentData.copy();
+        if (target instanceof PlayerEntity playerTarget) {
+            dataToTransfer.putString("OriginalOwner", playerTarget.getName().getString());
+        }
+
+        attackerData.addQuirk(quirkId, false, dataToTransfer);
 
         boolean fullyRemoved = targetData.removeQuirk(quirkId);
         if (fullyRemoved) {
@@ -256,7 +261,6 @@ public class QuirkAttackHandler {
             tp.sendMessage(Text.of("§4Your quirk " + quirkName + " was stolen!"), true);
         }
 
-        // FIXED: Now syncs properly regardless of if target is player or mob
         PlusUltraNetwork.sync(attacker);
         PlusUltraNetwork.sync(target);
     }
@@ -275,9 +279,10 @@ public class QuirkAttackHandler {
         }
 
         String quirkId = toGive.quirkId;
-        String quirkName = getFormalName(quirkId);
+        String quirkName = QuirkSystem.getFormalName(quirkId);
 
-        targetData.addQuirk(quirkId);
+        targetData.addQuirk(quirkId, false, toGive.persistentData);
+
         boolean fullyRemoved = attackerData.removeQuirk(quirkId);
         if (fullyRemoved) {
             QuirkSystem.Quirk q = QuirkRegistry.get(new Identifier(quirkId));
@@ -293,24 +298,7 @@ public class QuirkAttackHandler {
             tp.sendMessage(Text.of("§bYou received " + quirkName + "!"), true);
         }
 
-        // FIXED: Now syncs properly regardless of if target is player or mob
         PlusUltraNetwork.sync(attacker);
         PlusUltraNetwork.sync(target);
-    }
-
-    private static String getFormalName(String quirkId) {
-        try {
-            Identifier id = new Identifier(quirkId);
-            String path = id.getPath().replace("_", " ");
-            StringBuilder sb = new StringBuilder();
-            for (String s : path.split(" ")) {
-                if (!s.isEmpty()) {
-                    sb.append(Character.toUpperCase(s.charAt(0))).append(s.substring(1).toLowerCase()).append(" ");
-                }
-            }
-            return sb.toString().trim();
-        } catch (Exception e) {
-            return quirkId;
-        }
     }
 }

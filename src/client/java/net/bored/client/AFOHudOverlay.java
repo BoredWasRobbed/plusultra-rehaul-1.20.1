@@ -41,7 +41,8 @@ public class AFOHudOverlay implements HudRenderCallback {
 
             // Render List
             for (QuirkSystem.QuirkData.QuirkInstance instance : data.getQuirks()) {
-                String name = getFormalName(instance.quirkId);
+                // UPDATED: Use QuirkSystem to get formal name (includes Owner info)
+                String name = QuirkSystem.getFormalName(instance);
                 int color = 0xFFAA00; // Gold for quirk names
 
                 if (instance.innate) {
@@ -52,22 +53,6 @@ public class AFOHudOverlay implements HudRenderCallback {
                 context.drawTextWithShadow(font, name, centerX + 10, centerY + yOffset, color);
                 yOffset += 10;
             }
-        }
-    }
-
-    private String getFormalName(String quirkId) {
-        try {
-            Identifier id = new Identifier(quirkId);
-            String path = id.getPath().replace("_", " ");
-            StringBuilder sb = new StringBuilder();
-            for (String s : path.split(" ")) {
-                if (!s.isEmpty()) {
-                    sb.append(Character.toUpperCase(s.charAt(0))).append(s.substring(1).toLowerCase()).append(" ");
-                }
-            }
-            return sb.toString().trim();
-        } catch (Exception e) {
-            return quirkId;
         }
     }
 }

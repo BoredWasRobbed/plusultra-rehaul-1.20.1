@@ -71,21 +71,7 @@ public class StatMenuScreen extends Screen {
         }
     }
 
-    private String getFormalName(String quirkId) {
-        try {
-            Identifier id = new Identifier(quirkId);
-            String path = id.getPath().replace("_", " ");
-            StringBuilder sb = new StringBuilder();
-            for (String s : path.split(" ")) {
-                if (!s.isEmpty()) {
-                    sb.append(Character.toUpperCase(s.charAt(0))).append(s.substring(1).toLowerCase()).append(" ");
-                }
-            }
-            return sb.toString().trim();
-        } catch (Exception e) {
-            return quirkId;
-        }
-    }
+    // Removed private getFormalName to use QuirkSystem API
 
     @Override
     public void render(DrawContext context, int mouseX, int mouseY, float delta) {
@@ -115,7 +101,8 @@ public class StatMenuScreen extends Screen {
         String innateName = "None";
         for (QuirkSystem.QuirkData.QuirkInstance qi : data.getQuirks()) {
             if (qi.innate) {
-                innateName = getFormalName(qi.quirkId);
+                // UPDATED: Use QuirkSystem
+                innateName = QuirkSystem.getFormalName(qi);
                 break;
             }
         }
