@@ -34,6 +34,9 @@ public class PlusUltraConfig {
     // Using TreeMap to keep quirks sorted alphabetically in the file
     public Map<String, Boolean> enabledQuirks = new TreeMap<>();
 
+    // New: Map to specifically ban quirks from appearing on mobs (true = banned)
+    public Map<String, Boolean> mobBannedQuirks = new TreeMap<>();
+
     public PlusUltraConfig() {
     }
 
@@ -50,10 +53,16 @@ public class PlusUltraConfig {
         if (CONFIG_FILE.exists()) {
             try (BufferedReader reader = new BufferedReader(new FileReader(CONFIG_FILE))) {
                 String line;
+                String currentSection = "";
+
                 while ((line = reader.readLine()) != null) {
                     line = line.trim();
                     if (line.isEmpty() || line.startsWith("#")) continue;
-                    if (line.startsWith("[") && line.endsWith("]")) continue;
+
+                    if (line.startsWith("[") && line.endsWith("]")) {
+                        currentSection = line;
+                        continue;
+                    }
 
                     String[] parts = line.split("=", 2);
                     if (parts.length == 2) {
@@ -87,7 +96,11 @@ public class PlusUltraConfig {
                                 INSTANCE.villagerQuirkChance = 0.20;
                             }
                         } else {
-                            INSTANCE.enabledQuirks.put(key, Boolean.parseBoolean(value));
+                            if ("[MobBlacklist]".equals(currentSection)) {
+                                INSTANCE.mobBannedQuirks.put(key, Boolean.parseBoolean(value));
+                            } else {
+                                INSTANCE.enabledQuirks.put(key, Boolean.parseBoolean(value));
+                            }
                         }
                     }
                 }
@@ -106,6 +119,15 @@ public class PlusUltraConfig {
 
             if (!enabledQuirks.containsKey(key)) {
                 enabledQuirks.put(key, true);
+                changed = true;
+            }
+
+            if (!mobBannedQuirks.containsKey(key)) {
+                // Default ban OFA, AFO, and Quirkless from mobs if not already set
+                boolean shouldBan = key.equals("plusultra:one_for_all") ||
+                        key.equals("plusultra:all_for_one") ||
+                        key.equals("plusultra:quirkless");
+                mobBannedQuirks.put(key, shouldBan);
                 changed = true;
             }
         }
@@ -131,7 +153,7 @@ public class PlusUltraConfig {
             writer.println("uniqueQuirks = " + INSTANCE.uniqueQuirks);
             writer.println("");
 
-            writer.println("[Mob Spawning]");
+            writer.println("[MobSpawning]");
             writer.println("# If true, hostile monsters can naturally spawn with quirks.");
             writer.println("mobsCanSpawnWithQuirks = " + INSTANCE.mobsCanSpawnWithQuirks);
             writer.println("# The chance (0.0 to 1.0) for a hostile mob to spawn with a quirk. 0.05 = 5%.");
@@ -143,8 +165,16 @@ public class PlusUltraConfig {
             writer.println("");
 
             writer.println("[Quirks]");
-            writer.println("# Set to 'false' to disable specific quirks.");
+            writer.println("# Set to 'false' to disable specific quirks globally.");
             for (Map.Entry<String, Boolean> entry : INSTANCE.enabledQuirks.entrySet()) {
+                String key = "\"" + entry.getKey() + "\"";
+                writer.println(key + " = " + entry.getValue());
+            }
+
+            writer.println("");
+            writer.println("[MobBlacklist]");
+            writer.println("# Set to 'true' to PREVENT mobs from spawning with this quirk.");
+            for (Map.Entry<String, Boolean> entry : INSTANCE.mobBannedQuirks.entrySet()) {
                 String key = "\"" + entry.getKey() + "\"";
                 writer.println(key + " = " + entry.getValue());
             }
@@ -159,5 +189,10 @@ public class PlusUltraConfig {
             return enabledQuirks.getOrDefault("plusultra:one_for_all", true);
         }
         return enabledQuirks.getOrDefault(quirkId, true);
+    }
+
+    public boolean isQuirkBannedForMobs(String quirkId) {
+        if ("plusultra:quirk_bestowal".equals(quirkId)) return true;
+        return mobBannedQuirks.getOrDefault(quirkId, false);
     }
 }

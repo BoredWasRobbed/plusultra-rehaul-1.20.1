@@ -2,9 +2,13 @@ package net.bored.api;
 
 import net.bored.common.QuirkRegistry;
 import net.minecraft.entity.LivingEntity;
+import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.nbt.NbtCompound;
 import net.minecraft.nbt.NbtElement;
 import net.minecraft.nbt.NbtList;
+import net.minecraft.server.network.ServerPlayerEntity;
+import net.minecraft.text.Text;
+import net.minecraft.util.Hand;
 import net.minecraft.util.Identifier;
 
 import java.util.ArrayList;
@@ -22,6 +26,8 @@ public class QuirkSystem {
 
         public Quirk(Identifier id) {
             this.id = id;
+            // --- NEW: Automatically add Strike as the first ability ---
+            this.abilities.add(new StrikeAbility());
             registerAbilities();
         }
         public abstract void registerAbilities();
@@ -47,6 +53,62 @@ public class QuirkSystem {
         }
 
         public Identifier getId() { return id; }
+    }
+
+    // --- NEW: Global Strike Ability ---
+    public static class StrikeAbility extends Ability {
+        public StrikeAbility() {
+            super("Strike", AbilityType.INSTANT, 20, 1, 5.0);
+        }
+
+        @Override
+        public boolean shouldAIUse(LivingEntity user, LivingEntity target, double distanceSquared, QuirkData data, QuirkData.QuirkInstance instance) {
+            return target != null && distanceSquared < 9.0;
+        }
+
+        @Override
+        public void onActivate(LivingEntity entity, QuirkData data, QuirkData.QuirkInstance instance) {
+            entity.swingHand(Hand.MAIN_HAND, true);
+
+            // Base damage 3.0 + (Strength * 0.5)
+            float damage = 3.0f + (data.strength * 0.5f);
+
+            // Find target in front
+            net.minecraft.util.hit.HitResult hit = entity.raycast(3.5, 0, false);
+            if (hit.getType() == net.minecraft.util.hit.HitResult.Type.ENTITY) {
+                net.minecraft.util.hit.EntityHitResult entityHit = (net.minecraft.util.hit.EntityHitResult) hit;
+                if (entityHit.getEntity() instanceof LivingEntity target) {
+                    target.damage(entity.getDamageSources().mobAttack(entity), damage);
+                    target.takeKnockback(0.5f, entity.getX() - target.getX(), entity.getZ() - target.getZ());
+
+                    if (entity instanceof PlayerEntity p) {
+                        p.sendMessage(Text.of("§7Strike! [" + String.format("%.1f", damage) + " Dmg]"), true);
+                    }
+                }
+            } else {
+                // Area check fallback if raycast misses (like broad swing)
+                List<LivingEntity> targets = entity.getWorld().getEntitiesByClass(LivingEntity.class,
+                        entity.getBoundingBox().expand(1.0).offset(entity.getRotationVector().multiply(1.5)),
+                        e -> e != entity);
+
+                for (LivingEntity target : targets) {
+                    target.damage(entity.getDamageSources().mobAttack(entity), damage);
+                    target.takeKnockback(0.5f, entity.getX() - target.getX(), entity.getZ() - target.getZ());
+                    if (entity instanceof PlayerEntity p) {
+                        p.sendMessage(Text.of("§7Strike! [" + String.format("%.1f", damage) + " Dmg]"), true);
+                    }
+                    break; // Hit only one
+                }
+            }
+
+            this.triggerCooldown(instance);
+        }
+
+        // Always visible regardless of level
+        @Override
+        public boolean isHidden(QuirkData data, QuirkData.QuirkInstance instance) {
+            return false;
+        }
     }
 
     public static abstract class Ability {
@@ -163,12 +225,21 @@ public class QuirkSystem {
         }
 
         public void addQuirk(String id, boolean isInnate) {
+            // 1. Remove any placeholder "quirkless" quirks (just in case they exist as items)
+            quirks.removeIf(q -> q.quirkId.contains("quirkless"));
+
             for (QuirkInstance q : quirks) {
                 if (q.quirkId.equals(id)) {
                     q.count++;
                     return;
                 }
             }
+
+            // 2. If the user currently has no quirks (list is empty), this new quirk becomes their innate quirk
+            if (quirks.isEmpty()) {
+                isInnate = true;
+            }
+
             QuirkInstance newInstance = new QuirkInstance(id);
             newInstance.innate = isInnate;
             quirks.add(newInstance);

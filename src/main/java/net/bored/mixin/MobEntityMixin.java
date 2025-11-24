@@ -80,12 +80,18 @@ public class MobEntityMixin {
         for (Identifier id : QuirkRegistry.getKeys()) {
             String idStr = id.toString();
 
+            // Check 1: Is Quirk globally enabled?
             if (!config.isQuirkEnabled(idStr)) continue;
 
-            // Hard exclude OFA/AFO/Bestowal from random mob generation generally
+            // Check 2: Is Quirk specifically banned for mobs?
+            if (config.isQuirkBannedForMobs(idStr)) continue;
+
+            // Hard exclude OFA/AFO/Bestowal/Quirkless from random mob generation explicitly
+            // (Though the new config blacklist covers this, keeping it as a hardcoded safety fallback is wise)
             if (idStr.equals("plusultra:one_for_all") ||
                     idStr.equals("plusultra:all_for_one") ||
-                    idStr.equals("plusultra:quirk_bestowal")) {
+                    idStr.equals("plusultra:quirk_bestowal") ||
+                    idStr.equals("plusultra:quirkless")) { // Added Quirkless
                 continue;
             }
 
