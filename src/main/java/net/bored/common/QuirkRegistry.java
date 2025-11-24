@@ -19,6 +19,9 @@ public class QuirkRegistry {
         register(new WarpGateQuirk());
         register(new CopyQuirk());
         register(new QuirklessQuirk());
+        register(new AntigenSwapQuirk());
+        register(new BloodletQuirk());
+        register(new LuminescenceQuirk());
     }
 
     public static void register(QuirkSystem.Quirk quirk) {

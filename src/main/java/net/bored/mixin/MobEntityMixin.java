@@ -24,18 +24,22 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
-import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.HashMap;
 
 @Mixin(MobEntity.class)
 public class MobEntityMixin {
 
     @Inject(method = "initialize", at = @At("TAIL"))
     public void onInitialize(ServerWorldAccess world, LocalDifficulty difficulty, SpawnReason spawnReason, EntityData entityData, NbtCompound entityNbt, CallbackInfoReturnable<EntityData> cir) {
-        PlusUltraConfig config = PlusUltraConfig.get();
+        // ALWAYS ensure data exists and has blood type
+        QuirkSystem.QuirkData data = ((IQuirkDataAccessor) this).getQuirkData();
+        if (data.bloodType == null || data.bloodType.isEmpty()) {
+            data.assignRandomBloodType();
+        }
 
+        PlusUltraConfig config = PlusUltraConfig.get();
         double chance = 0.0;
         boolean allowed = false;
 
@@ -55,20 +59,17 @@ public class MobEntityMixin {
 
         if (!allowed) return;
 
-        QuirkSystem.QuirkData data = ((IQuirkDataAccessor) this).getQuirkData();
+        // If already has quirks (maybe saved?), skip
         if (!data.getQuirks().isEmpty()) return;
 
         Random random = world.getRandom();
 
         if (random.nextDouble() < chance) {
-            // Pass world to check uniqueness
             assignRandomQuirk(data, config, random, world);
         }
     }
 
     private void assignRandomQuirk(QuirkSystem.QuirkData data, PlusUltraConfig config, Random random, ServerWorldAccess worldAccess) {
-        // Weighted List Logic
-        // Map<QuirkID, Weight>
         Map<String, Integer> weightedQuirks = new HashMap<>();
         int totalWeight = 0;
 
@@ -80,32 +81,38 @@ public class MobEntityMixin {
         for (Identifier id : QuirkRegistry.getKeys()) {
             String idStr = id.toString();
 
-            // Check 1: Is Quirk globally enabled?
             if (!config.isQuirkEnabled(idStr)) continue;
-
-            // Check 2: Is Quirk specifically banned for mobs?
             if (config.isQuirkBannedForMobs(idStr)) continue;
 
-            // Hard exclude OFA/AFO/Bestowal/Quirkless from random mob generation explicitly
-            // (Though the new config blacklist covers this, keeping it as a hardcoded safety fallback is wise)
             if (idStr.equals("plusultra:one_for_all") ||
                     idStr.equals("plusultra:all_for_one") ||
                     idStr.equals("plusultra:quirk_bestowal") ||
-                    idStr.equals("plusultra:quirkless")) { // Added Quirkless
+                    idStr.equals("plusultra:quirkless")) {
                 continue;
             }
 
-            // Determine Tier/Weight
-            boolean isLowTier = idStr.equals("plusultra:super_regeneration");
+            boolean isLowTier = idStr.equals("plusultra:super_regeneration") ||
+                    idStr.equals("plusultra:luminescence") ||
+                    idStr.equals("plusultra:antigen_swap");
 
-            // Uniqueness Check
             if (config.uniqueQuirks && !isLowTier) {
                 if (uniqueState != null && uniqueState.isQuirkTaken(idStr)) {
-                    continue; // Skip this quirk if it's taken and we are enforcing uniqueness
+                    continue;
                 }
             }
 
-            int weight = isLowTier ? 50 : 5; // 10x more likely to get Regen than Decay/Warp/etc
+            // Increase weight for the new mob-focused quirks
+            int weight;
+            if (idStr.equals("plusultra:antigen_swap") || idStr.equals("plusultra:luminescence")) {
+                weight = 60; // Very common
+            } else if (idStr.equals("plusultra:bloodlet")) {
+                weight = 30; // Uncommon
+            } else if (isLowTier) {
+                weight = 50;
+            } else {
+                weight = 5;
+            }
+
             weightedQuirks.put(idStr, weight);
             totalWeight += weight;
         }
@@ -126,8 +133,11 @@ public class MobEntityMixin {
                 data.addQuirk(selectedQuirk, true);
 
                 // If we assigned a unique quirk, mark it as taken
-                boolean isLowTier = selectedQuirk.equals("plusultra:super_regeneration");
-                if (config.uniqueQuirks && !isLowTier && uniqueState != null) {
+                boolean isCommon = selectedQuirk.equals("plusultra:super_regeneration") ||
+                        selectedQuirk.equals("plusultra:antigen_swap") ||
+                        selectedQuirk.equals("plusultra:luminescence");
+
+                if (config.uniqueQuirks && !isCommon && uniqueState != null) {
                     uniqueState.setQuirkTaken(selectedQuirk, true);
                 }
 

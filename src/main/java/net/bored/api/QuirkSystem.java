@@ -9,7 +9,6 @@ import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.nbt.NbtCompound;
 import net.minecraft.nbt.NbtElement;
 import net.minecraft.nbt.NbtList;
-import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.text.Text;
 import net.minecraft.util.Hand;
 import net.minecraft.util.Identifier;
@@ -19,16 +18,15 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.Arrays;
+import java.util.Random;
 
 public class QuirkSystem {
 
     private static final UUID SPEED_MODIFIER_ID = UUID.fromString("1a2b3c4d-5e6f-7a8b-9c0d-1e2f3a4b5c6d");
     private static final UUID HEALTH_MODIFIER_ID = UUID.fromString("2b3c4d5e-6f7a-8b9c-0d1e-2f3a4b5c6d7e");
     private static final UUID ATTACK_MODIFIER_ID = UUID.fromString("3c4d5e6f-7a8b-9c0d-1e2f-3a4b5c6d7e8f");
-    // NEW: Modifier ID for Step Height (Using a distinct UUID)
-    private static final UUID STEP_HEIGHT_MODIFIER_ID = UUID.fromString("4d5e6f7a-8b9c-0d1e-2f3a-4b5c6d7e8f9a");
 
-    // --- NEW: Central Utility for Names ---
     public static String getFormalName(String quirkId) {
         try {
             Identifier id = new Identifier(quirkId);
@@ -45,7 +43,6 @@ public class QuirkSystem {
         }
     }
 
-    // Overload to handle Instance data (Original Owner tag)
     public static String getFormalName(QuirkData.QuirkInstance instance) {
         String baseName = getFormalName(instance.quirkId);
         if (instance.persistentData.contains("OriginalOwner")) {
@@ -63,7 +60,6 @@ public class QuirkSystem {
 
         public Quirk(Identifier id) {
             this.id = id;
-            // Automatically add Strike as the first ability
             this.abilities.add(new StrikeAbility());
             registerAbilities();
         }
@@ -92,7 +88,6 @@ public class QuirkSystem {
         public Identifier getId() { return id; }
     }
 
-    // Global Strike Ability
     public static class StrikeAbility extends Ability {
         public StrikeAbility() {
             super("Strike", AbilityType.INSTANT, 20, 1, 5.0);
@@ -106,24 +101,18 @@ public class QuirkSystem {
         @Override
         public void onActivate(LivingEntity entity, QuirkData data, QuirkData.QuirkInstance instance) {
             entity.swingHand(Hand.MAIN_HAND, true);
-
-            // Improved Damage Scaling: Base 3.0 + (Strength * 1.5)
             float damage = 3.0f + (data.strength * 1.5f);
-
-            // Find target in front
             net.minecraft.util.hit.HitResult hit = entity.raycast(3.5, 0, false);
             if (hit.getType() == net.minecraft.util.hit.HitResult.Type.ENTITY) {
                 net.minecraft.util.hit.EntityHitResult entityHit = (net.minecraft.util.hit.EntityHitResult) hit;
                 if (entityHit.getEntity() instanceof LivingEntity target) {
                     target.damage(entity.getDamageSources().mobAttack(entity), damage);
                     target.takeKnockback(0.5f, entity.getX() - target.getX(), entity.getZ() - target.getZ());
-
                     if (entity instanceof PlayerEntity p) {
                         p.sendMessage(Text.of("§7Strike! [" + String.format("%.1f", damage) + " Dmg]"), true);
                     }
                 }
             } else {
-                // Area check fallback if raycast misses (like broad swing)
                 List<LivingEntity> targets = entity.getWorld().getEntitiesByClass(LivingEntity.class,
                         entity.getBoundingBox().expand(1.0).offset(entity.getRotationVector().multiply(1.5)),
                         e -> e != entity);
@@ -134,17 +123,14 @@ public class QuirkSystem {
                     if (entity instanceof PlayerEntity p) {
                         p.sendMessage(Text.of("§7Strike! [" + String.format("%.1f", damage) + " Dmg]"), true);
                     }
-                    break; // Hit only one
+                    break;
                 }
             }
-
             this.triggerCooldown(instance);
         }
 
         @Override
-        public boolean isHidden(QuirkData data, QuirkData.QuirkInstance instance) {
-            return false;
-        }
+        public boolean isHidden(QuirkData data, QuirkData.QuirkInstance instance) { return false; }
     }
 
     public static abstract class Ability {
@@ -163,7 +149,6 @@ public class QuirkSystem {
         }
 
         public abstract void onActivate(LivingEntity entity, QuirkData data, QuirkData.QuirkInstance instance);
-
         public void onHoldTick(LivingEntity entity, QuirkData data, QuirkData.QuirkInstance instance) {}
         public void onRelease(LivingEntity entity, QuirkData data, QuirkData.QuirkInstance instance) {}
 
@@ -221,6 +206,8 @@ public class QuirkSystem {
         public int level = 1, experience = 0;
         public double currentStamina = 100;
         public boolean cooldownsDisabled = false;
+        // New Field: Blood Type
+        public String bloodType = "";
 
         private final List<QuirkInstance> quirks = new ArrayList<>();
         private int selectedQuirkIndex = 0;
@@ -242,45 +229,29 @@ public class QuirkSystem {
             public QuirkInstance(String id) { this.quirkId = id; }
         }
 
-        public void addQuirk(String id, boolean isInnate) {
-            addQuirk(id, isInnate, null);
+        public void assignRandomBloodType() {
+            List<String> types = Arrays.asList("A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-");
+            this.bloodType = types.get(new Random().nextInt(types.size()));
         }
 
-        public void addQuirk(String id) {
-            addQuirk(id, false, null);
-        }
+        public void addQuirk(String id, boolean isInnate) { addQuirk(id, isInnate, null); }
+        public void addQuirk(String id) { addQuirk(id, false, null); }
 
         public void addQuirk(String id, boolean isInnate, NbtCompound data) {
-            // 1. Remove any placeholder "quirkless" quirks
             quirks.removeIf(q -> q.quirkId.contains("quirkless"));
-
-            // Check if this specific addition is a "Special Copy" (has an Owner tag)
             boolean isSpecial = data != null && data.contains("OriginalOwner");
-
-            // Only attempt to stack if the incoming quirk is NOT special (generic)
             if (!isSpecial) {
                 for (QuirkInstance q : quirks) {
-                    // Only stack with existing quirks that are also NOT special
                     if (q.quirkId.equals(id) && !q.persistentData.contains("OriginalOwner")) {
                         q.count++;
                         return;
                     }
                 }
             }
-
-            // 2. If the user currently has no quirks (list is empty), this new quirk becomes their innate quirk
-            if (quirks.isEmpty()) {
-                isInnate = true;
-            }
-
+            if (quirks.isEmpty()) isInnate = true;
             QuirkInstance newInstance = new QuirkInstance(id);
             newInstance.innate = isInnate;
-
-            // 3. Copy data if provided
-            if (data != null) {
-                newInstance.persistentData = data.copy();
-            }
-
+            if (data != null) newInstance.persistentData = data.copy();
             quirks.add(newInstance);
         }
 
@@ -301,97 +272,55 @@ public class QuirkSystem {
         }
 
         public void tick(LivingEntity entity) {
-            // Cap Stats at 50
             strength = Math.min(strength, 50);
             endurance = Math.min(endurance, 50);
             speed = Math.min(speed, 50);
             staminaMax = Math.min(staminaMax, 50);
             meta = Math.min(meta, 50);
 
-            // --- STAT SCALING LOGIC ---
+            // Ensure Blood Type exists
+            if (bloodType == null || bloodType.isEmpty()) {
+                assignRandomBloodType();
+            }
+
             if (!entity.getWorld().isClient) {
-                // 1. Speed: Add movement speed modifier
                 EntityAttributeInstance movementSpeed = entity.getAttributeInstance(EntityAttributes.GENERIC_MOVEMENT_SPEED);
                 if (movementSpeed != null) {
-                    // Remove existing to update
-                    if (movementSpeed.getModifier(SPEED_MODIFIER_ID) != null) {
-                        movementSpeed.removeModifier(SPEED_MODIFIER_ID);
-                    }
+                    if (movementSpeed.getModifier(SPEED_MODIFIER_ID) != null) movementSpeed.removeModifier(SPEED_MODIFIER_ID);
                     if (speed > 0) {
-                        // CHANGED: Increased scaling to 3% per point (was 1.5%)
-                        // At 50 speed, this is +150% speed (2.5x total)
                         double amount = speed * 0.03;
                         movementSpeed.addTemporaryModifier(new EntityAttributeModifier(SPEED_MODIFIER_ID, "Quirk Speed", amount, EntityAttributeModifier.Operation.MULTIPLY_BASE));
                     }
                 }
 
-                // NEW: Step Height Increase at Speed >= 5
-                // Note: Vanilla 1.20.1 doesn't have GENERIC_STEP_HEIGHT exposed easily in some mappings,
-                // but Fabric usually allows access if it exists or we set it directly on player if possible.
-                // However, step height is often not an Attribute in older/some versions.
-                // We will try setting it directly on the entity if it's a PlayerEntity.
                 if (entity instanceof PlayerEntity player) {
-                    // 1.20.1 typically handles step height via attributes or field.
-                    // We'll try the attribute first as it's standard in modern versions.
-                    // If GENERIC_STEP_HEIGHT isn't available in your specific yarn/fabric version context,
-                    // we might need to cast to a specific interface or use a mixin accessor.
-                    // Assuming standard Fabric API availability or EntityAttributes:
-
-                    // Check if EntityAttributes has STEP_HEIGHT (Added in later versions, might be missing in early 1.20.1 mappings)
-                    // If it's missing, we fall back to setting `stepHeight` field if accessible or simple logic.
-                    // For this environment, we will use a safe check.
-
-                    // Since we can't guarantee the Attribute exists in this specific mapping set without checking,
-                    // we'll use the direct setter `setStepHeight` which usually exists on Entity.
-
-                    float newStepHeight = 0.6f; // Default
-                    if (speed >= 5) {
-                        newStepHeight = 1.5f; // Step up full blocks + slabs
-                    }
-
-                    // Only set if different to avoid conflict with other mods/logic
-                    if (player.getStepHeight() != newStepHeight) {
-                        player.setStepHeight(newStepHeight);
-                    }
+                    float newStepHeight = 0.6f;
+                    if (speed >= 5) newStepHeight = 1.5f;
+                    if (player.getStepHeight() != newStepHeight) player.setStepHeight(newStepHeight);
                 }
 
-                // 2. Endurance: Add max health modifier
                 EntityAttributeInstance maxHealth = entity.getAttributeInstance(EntityAttributes.GENERIC_MAX_HEALTH);
                 if (maxHealth != null) {
-                    if (maxHealth.getModifier(HEALTH_MODIFIER_ID) != null) {
-                        maxHealth.removeModifier(HEALTH_MODIFIER_ID);
-                    }
+                    if (maxHealth.getModifier(HEALTH_MODIFIER_ID) != null) maxHealth.removeModifier(HEALTH_MODIFIER_ID);
                     if (endurance > 0) {
-                        // 2 HP (1 Heart) per point
                         double amount = endurance * 2.0;
                         maxHealth.addTemporaryModifier(new EntityAttributeModifier(HEALTH_MODIFIER_ID, "Quirk Health", amount, EntityAttributeModifier.Operation.ADDITION));
                     }
                 }
 
-                // 3. Strength: Add attack damage modifier (if base attacks are used)
-                // Note: Strike ability calculates its own damage, but this helps vanilla attacks too
                 EntityAttributeInstance attackDamage = entity.getAttributeInstance(EntityAttributes.GENERIC_ATTACK_DAMAGE);
                 if (attackDamage != null) {
-                    if (attackDamage.getModifier(ATTACK_MODIFIER_ID) != null) {
-                        attackDamage.removeModifier(ATTACK_MODIFIER_ID);
-                    }
+                    if (attackDamage.getModifier(ATTACK_MODIFIER_ID) != null) attackDamage.removeModifier(ATTACK_MODIFIER_ID);
                     if (strength > 0) {
-                        // 0.5 Damage per point
                         double amount = strength * 0.5;
                         attackDamage.addTemporaryModifier(new EntityAttributeModifier(ATTACK_MODIFIER_ID, "Quirk Strength", amount, EntityAttributeModifier.Operation.ADDITION));
                     }
                 }
 
-                // 4. Endurance: Hunger reduction
                 if (entity instanceof PlayerEntity player && endurance > 0) {
-                    // Reduce exhaustion occasionally based on endurance
-                    // Higher endurance = more likely to negate exhaustion tick
                     if (entity.age % 20 == 0) {
-                        // Just a small passive reduction logic or slower hunger drain
-                        // Vanilla handles exhaustion accumulation. We can reduce current exhaustion level.
                         float currentExhaustion = player.getHungerManager().getExhaustion();
                         if (currentExhaustion > 0) {
-                            // 2% reduction per endurance level per second
                             float reduction = currentExhaustion * (endurance * 0.02f);
                             player.getHungerManager().setExhaustion(Math.max(0, currentExhaustion - reduction));
                         }
@@ -399,8 +328,7 @@ public class QuirkSystem {
                 }
             }
 
-            // Stamina Regen (Scaled by Stamina stat slightly + base)
-            double regen = 0.5 + (staminaMax * 0.15); // Buffed regen scaling slightly
+            double regen = 0.5 + (staminaMax * 0.15);
             if (currentStamina < getMaxStaminaPool()) currentStamina = Math.min(currentStamina + regen, getMaxStaminaPool());
 
             if (aiActionCooldown > 0) aiActionCooldown--;
@@ -422,7 +350,7 @@ public class QuirkSystem {
             }
         }
 
-        public double getMaxStaminaPool() { return 100 + (staminaMax * 10); } // Increased to 10 per point
+        public double getMaxStaminaPool() { return 100 + (staminaMax * 10); }
         public float getMaxXp() { return level * 100f; }
 
         public void addXp(int amount) {
@@ -450,6 +378,8 @@ public class QuirkSystem {
             nbt.putInt("SelectedA", selectedAbilityIndex);
             nbt.put("PlayerData", persistentData);
 
+            if(bloodType != null) nbt.putString("BloodType", bloodType);
+
             NbtList quirkList = new NbtList();
             for(QuirkInstance qi : quirks) {
                 NbtCompound qTag = new NbtCompound();
@@ -459,13 +389,11 @@ public class QuirkSystem {
                 qTag.putBoolean("Awakened", qi.awakened);
                 qTag.putBoolean("Locked", qi.isLocked);
                 qTag.put("Data", qi.persistentData);
-
                 NbtCompound cdTag = new NbtCompound();
                 for(Map.Entry<String, Integer> entry : qi.cooldowns.entrySet()) {
                     cdTag.putInt(entry.getKey(), entry.getValue());
                 }
                 qTag.put("Cooldowns", cdTag);
-
                 quirkList.add(qTag);
             }
             nbt.put("Quirks", quirkList);
@@ -484,6 +412,9 @@ public class QuirkSystem {
             if (nbt.contains("CooldownsDisabled")) cooldownsDisabled = nbt.getBoolean("CooldownsDisabled");
             if (nbt.contains("PlayerData")) persistentData = nbt.getCompound("PlayerData");
 
+            if (nbt.contains("BloodType")) bloodType = nbt.getString("BloodType");
+            else assignRandomBloodType();
+
             selectedQuirkIndex = nbt.getInt("SelectedQ");
             selectedAbilityIndex = nbt.getInt("SelectedA");
 
@@ -498,39 +429,32 @@ public class QuirkSystem {
                 if (qTag.contains("Data")) qi.persistentData = qTag.getCompound("Data");
                 if (qTag.contains("Locked")) qi.isLocked = qTag.getBoolean("Locked");
                 qi.awakened = qTag.getBoolean("Awakened");
-
                 if (qTag.contains("Cooldowns")) {
                     NbtCompound cdTag = qTag.getCompound("Cooldowns");
                     for(String key : cdTag.getKeys()) {
                         qi.cooldowns.put(key, cdTag.getInt(key));
                     }
                 }
-
                 quirks.add(qi);
             }
         }
 
         public List<QuirkInstance> getQuirks() { return quirks; }
         public int getSelectedQuirkIndex() { return selectedQuirkIndex; }
-
         public void setSelectedQuirkIndex(int index) {
             this.selectedQuirkIndex = index;
             this.selectedAbilityIndex = 0;
         }
-
         public int getSelectedAbilityIndex() { return selectedAbilityIndex; }
         public void setSelectedAbilityIndex(int index) { this.selectedAbilityIndex = index; }
 
         public void cycleAbility(int direction, List<Ability> abilities, QuirkInstance instance) {
             if (abilities.isEmpty()) return;
             int max = abilities.size();
-            int start = selectedAbilityIndex;
-            int current = start;
-
+            int current = selectedAbilityIndex;
             for(int i=0; i<max; i++) {
                 current = (current + direction) % max;
                 if (current < 0) current += max;
-
                 if (!abilities.get(current).isHidden(this, instance)) {
                     selectedAbilityIndex = current;
                     return;

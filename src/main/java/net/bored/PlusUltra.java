@@ -31,10 +31,9 @@ import java.util.Random;
 public class PlusUltra implements ModInitializer {
 	public static final String MOD_ID = "plusultra";
 
-	// RENAMED / UPDATED
 	public static final EntityType<QuirkProjectileEntity> QUIRK_PROJECTILE = Registry.register(
 			Registries.ENTITY_TYPE,
-			new Identifier(MOD_ID, "flick_projectile"), // Keep ID string to avoid breaking saves/commands if possible
+			new Identifier(MOD_ID, "flick_projectile"),
 			FabricEntityTypeBuilder.<QuirkProjectileEntity>create(SpawnGroup.MISC, QuirkProjectileEntity::new)
 					.dimensions(EntityDimensions.fixed(0.5f, 0.5f))
 					.trackRangeBlocks(64).trackedUpdateRate(10)
@@ -56,6 +55,11 @@ public class PlusUltra implements ModInitializer {
 			ServerPlayerEntity player = handler.player;
 			IQuirkDataAccessor accessor = (IQuirkDataAccessor) player;
 			QuirkSystem.QuirkData data = accessor.getQuirkData();
+
+			// Ensure blood type is set immediately upon joining if missing (e.g. old saves)
+			if (data.bloodType == null || data.bloodType.isEmpty()) {
+				data.assignRandomBloodType();
+			}
 
 			if (!data.persistentData.contains("PlusUltraJoined")) {
 				data.persistentData.putBoolean("PlusUltraJoined", true);
@@ -89,8 +93,15 @@ public class PlusUltra implements ModInitializer {
 			String idStr = id.toString();
 
 			if (!config.isQuirkEnabled(idStr)) continue;
+
+			// Filter out special unique quirks
 			if (idStr.equals("plusultra:one_for_all") || idStr.equals("plusultra:all_for_one")) continue;
 			if (idStr.equals("plusultra:quirk_bestowal")) continue;
+
+			// Filter out MOB ONLY quirks for default player spawn
+			if (idStr.equals("plusultra:antigen_swap")) continue;
+			if (idStr.equals("plusultra:bloodlet")) continue;
+			if (idStr.equals("plusultra:luminescence")) continue;
 
 			validQuirks.add(id);
 		}
