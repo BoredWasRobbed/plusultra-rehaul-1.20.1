@@ -2,6 +2,7 @@ package net.bored;
 
 import net.bored.api.IQuirkDataAccessor;
 import net.bored.api.QuirkSystem;
+import net.bored.common.NewOrderHandlers;
 import net.bored.common.PlusUltraCommands;
 import net.bored.common.PlusUltraNetwork;
 import net.bored.common.QuirkAttackHandler;
@@ -50,6 +51,7 @@ public class PlusUltra implements ModInitializer {
 
 		PlusUltraCommands.register();
 		QuirkAttackHandler.register();
+		NewOrderHandlers.register(); // New!
 
 		ServerPlayConnectionEvents.JOIN.register((handler, sender, server) -> {
 			ServerPlayerEntity player = handler.player;
@@ -168,6 +170,7 @@ public class PlusUltra implements ModInitializer {
 			// Filter out special unique quirks
 			if (idStr.equals("plusultra:one_for_all") || idStr.equals("plusultra:all_for_one")) continue;
 			if (idStr.equals("plusultra:quirk_bestowal")) continue;
+			if (idStr.equals("plusultra:new_order")) continue; // Don't give New Order randomly by default as it's complex/OP
 
 			// Filter out MOB ONLY quirks for default player spawn
 			if (idStr.equals("plusultra:antigen_swap")) continue;

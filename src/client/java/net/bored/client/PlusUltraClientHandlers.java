@@ -4,6 +4,7 @@ import net.bored.common.PlusUltraNetwork;
 import net.bored.api.QuirkSystem;
 import net.bored.api.IQuirkDataAccessor;
 import net.bored.common.quirks.ErasureQuirk;
+import net.bored.client.NewOrderScreen;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
@@ -46,6 +47,14 @@ public class PlusUltraClientHandlers implements ClientModInitializer {
         menuKey = KeyBindingHelper.registerKeyBinding(new KeyBinding("key.plusultra.menu", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_V, "category.plusultra.main"));
         statsKey = KeyBindingHelper.registerKeyBinding(new KeyBinding("key.plusultra.stats", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_K, "category.plusultra.main"));
         specialKey = KeyBindingHelper.registerKeyBinding(new KeyBinding("key.plusultra.special", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_G, "category.plusultra.main"));
+
+        // Register Packet for opening New Order Menu
+        ClientPlayNetworking.registerGlobalReceiver(new Identifier("plusultra", "open_new_order_menu"), (client, handler, buf, responseSender) -> {
+            int entityId = buf.readInt();
+            client.execute(() -> {
+                client.setScreen(new NewOrderScreen());
+            });
+        });
 
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             if (client.player == null || client.world == null) return;
