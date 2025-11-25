@@ -26,7 +26,6 @@ public class QuirkRegistry {
         register(new InvisibilityQuirk());
         register(new ErasureQuirk());
         register(new DangerSenseQuirk());
-        register(new NewOrderQuirk()); // New!
     }
 
     public static void register(QuirkSystem.Quirk quirk) {

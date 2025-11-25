@@ -2,7 +2,6 @@ package net.bored.common;
 
 import net.bored.api.IQuirkDataAccessor;
 import net.bored.api.QuirkSystem;
-import net.bored.common.quirks.NewOrderQuirk;
 import net.fabricmc.fabric.api.networking.v1.PacketByteBufs;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.fabricmc.fabric.api.networking.v1.PlayerLookup;
@@ -30,10 +29,6 @@ public class PlusUltraNetwork {
     public static final Identifier UPGRADE_STAT = new Identifier("plusultra", "upgrade_stat");
     public static final Identifier ADJUST_PERCENTAGE = new Identifier("plusultra", "adjust_percentage");
     public static final Identifier TOGGLE_DESTRUCTION = new Identifier("plusultra", "toggle_destruction");
-
-    // NEW ORDER PACKETS
-    public static final Identifier SYNC_NEW_ORDER_RULE = new Identifier("plusultra", "sync_new_order_rule");
-    public static final Identifier REMOVE_NEW_ORDER_RULE = new Identifier("plusultra", "remove_new_order_rule");
 
     public static void registerServerReceivers() {
         ServerPlayNetworking.registerGlobalReceiver(ACTIVATE_ABILITY, (server, player, handler, buf, responseSender) -> {
@@ -183,72 +178,6 @@ public class PlusUltraNetwork {
                 }
                 data.statPoints -= amount;
                 sync(player);
-            });
-        });
-
-        // --- NEW ORDER RULE SYNC ---
-        ServerPlayNetworking.registerGlobalReceiver(SYNC_NEW_ORDER_RULE, (server, player, handler, buf, responseSender) -> {
-            String phrase = buf.readString();
-            String targetType = buf.readString(); // New Field
-            String effect = buf.readString();
-            int cost = buf.readInt();
-
-            server.execute(() -> {
-                QuirkSystem.QuirkData data = ((IQuirkDataAccessor) player).getQuirkData();
-
-                // Find New Order Instance
-                QuirkSystem.QuirkData.QuirkInstance newOrder = null;
-                for (QuirkSystem.QuirkData.QuirkInstance q : data.getQuirks()) {
-                    if (q.quirkId.equals("plusultra:new_order")) {
-                        newOrder = q;
-                        break;
-                    }
-                }
-
-                if (newOrder != null) {
-                    // Ensure "SavedRules" list exists
-                    if (!newOrder.persistentData.contains("SavedRules")) {
-                        newOrder.persistentData.put("SavedRules", new NbtList());
-                    }
-
-                    NbtList savedRules = newOrder.persistentData.getList("SavedRules", NbtElement.COMPOUND_TYPE);
-
-                    // Add new rule
-                    NbtCompound ruleTag = new NbtCompound();
-                    ruleTag.putString("Phrase", phrase);
-                    ruleTag.putString("TargetType", targetType); // Save new field
-                    ruleTag.putString("Effect", effect);
-                    ruleTag.putInt("Cost", cost);
-                    savedRules.add(ruleTag);
-
-                    newOrder.persistentData.put("SavedRules", savedRules);
-
-                    player.sendMessage(Text.of("§a[New Order] Rule: \"" + phrase + "\" -> " + targetType + " -> " + effect), true);
-                    sync(player);
-                } else {
-                    player.sendMessage(Text.of("§cError: You do not have New Order."), true);
-                }
-            });
-        });
-
-        // --- NEW ORDER REMOVE RULE ---
-        ServerPlayNetworking.registerGlobalReceiver(REMOVE_NEW_ORDER_RULE, (server, player, handler, buf, responseSender) -> {
-            int index = buf.readInt();
-            server.execute(() -> {
-                QuirkSystem.QuirkData data = ((IQuirkDataAccessor) player).getQuirkData();
-                QuirkSystem.QuirkData.QuirkInstance newOrder = null;
-                for (QuirkSystem.QuirkData.QuirkInstance q : data.getQuirks()) {
-                    if (q.quirkId.equals("plusultra:new_order")) {
-                        newOrder = q;
-                        break;
-                    }
-                }
-                if (newOrder != null) {
-                    NewOrderQuirk quirk = (NewOrderQuirk) QuirkRegistry.get(new Identifier("plusultra:new_order"));
-                    if (quirk != null) {
-                        quirk.removeRule(player, newOrder, index);
-                    }
-                }
             });
         });
 
