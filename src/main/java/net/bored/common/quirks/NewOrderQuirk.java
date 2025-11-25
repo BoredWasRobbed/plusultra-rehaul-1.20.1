@@ -135,9 +135,9 @@ public class NewOrderQuirk extends QuirkSystem.Quirk {
                 target.addStatusEffect(new StatusEffectInstance(StatusEffects.LEVITATION, 10, 2));
                 break;
             case "SMITE":
-                if (timeLeft % 10 == 0) {
+                if (timeLeft % 40 == 0) { // Slower tick for Smite to balance damage
                     world.spawnParticles(ParticleTypes.ELECTRIC_SPARK, target.getX(), target.getY()+1, target.getZ(), 1, 0, 0, 0, 0);
-                    target.damage(user.getDamageSources().lightningBolt(), 2.0f);
+                    target.damage(user.getDamageSources().lightningBolt(), 4.0f);
                 }
                 break;
             case "WEAKEN":
@@ -148,16 +148,53 @@ public class NewOrderQuirk extends QuirkSystem.Quirk {
                 target.addStatusEffect(new StatusEffectInstance(StatusEffects.STRENGTH, 40, 1));
                 target.addStatusEffect(new StatusEffectInstance(StatusEffects.SPEED, 40, 1));
                 break;
+            // --- NEW EFFECTS ---
+            case "SHIELD":
+                target.addStatusEffect(new StatusEffectInstance(StatusEffects.RESISTANCE, 40, 2));
+                target.addStatusEffect(new StatusEffectInstance(StatusEffects.ABSORPTION, 40, 0));
+                break;
+            case "HEAL":
+                if (timeLeft % 20 == 0) {
+                    target.addStatusEffect(new StatusEffectInstance(StatusEffects.REGENERATION, 40, 1));
+                }
+                break;
+            case "LAUNCH":
+                if (timeLeft % 60 == 0) { // Intermittent launch
+                    target.addVelocity(0, 1.0, 0);
+                    target.velocityModified = true;
+                    world.playSound(null, target.getBlockPos(), net.minecraft.sound.SoundEvents.ENTITY_FIREWORK_ROCKET_LAUNCH, net.minecraft.sound.SoundCategory.PLAYERS, 1.0f, 1.0f);
+                }
+                break;
+            case "GLOW":
+                target.addStatusEffect(new StatusEffectInstance(StatusEffects.GLOWING, 40, 0));
+                break;
+            case "WITHER":
+                if (timeLeft % 20 == 0) {
+                    target.addStatusEffect(new StatusEffectInstance(StatusEffects.WITHER, 40, 1));
+                }
+                break;
         }
     }
 
     public void cleanupRuleEffect(Entity targetEntity, String effect) {
         if (targetEntity instanceof LivingEntity target) {
+            // Remove lingering effects if rule is cancelled early
             if (effect.equals("STOP")) {
                 target.removeStatusEffect(StatusEffects.SLOWNESS);
                 target.removeStatusEffect(StatusEffects.WEAKNESS);
             } else if (effect.equals("FLOAT")) {
                 target.removeStatusEffect(StatusEffects.LEVITATION);
+            } else if (effect.equals("SHIELD")) {
+                target.removeStatusEffect(StatusEffects.RESISTANCE);
+                target.removeStatusEffect(StatusEffects.ABSORPTION);
+            } else if (effect.equals("GLOW")) {
+                target.removeStatusEffect(StatusEffects.GLOWING);
+            } else if (effect.equals("WEAKEN")) {
+                target.removeStatusEffect(StatusEffects.WEAKNESS);
+                target.removeStatusEffect(StatusEffects.MINING_FATIGUE);
+            } else if (effect.equals("BOOST")) {
+                target.removeStatusEffect(StatusEffects.STRENGTH);
+                target.removeStatusEffect(StatusEffects.SPEED);
             }
         }
     }

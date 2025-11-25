@@ -22,6 +22,7 @@ import net.minecraft.util.math.Vec3d;
 
 import java.util.Optional;
 import java.util.UUID;
+import java.util.List;
 
 public class NewOrderHandlers {
 
@@ -46,7 +47,7 @@ public class NewOrderHandlers {
 
             // 1. CHECK FOR TARGET NAMING
             if (tryTargeting(sender, data, content)) {
-                return true; // It was a targeting command, but let it show in chat for dramatic effect
+                return true; // It was a targeting command, but let it show in chat
             }
 
             // 2. CHECK FOR RULE ACTIVATION
@@ -60,15 +61,13 @@ public class NewOrderHandlers {
 
     private static boolean tryTargeting(ServerPlayerEntity player, QuirkSystem.QuirkData data, String message) {
         // Simple heuristic: Is the message an entity type name?
-        // e.g., "Creeper", "Pig", "Zombie"
-        // Or "PlayerName"
-
         Entity foundTarget = null;
 
         // A. Check Player Names first
         ServerPlayerEntity targetPlayer = player.getServer().getPlayerManager().getPlayer(message);
         if (targetPlayer != null) {
-            if (canSee(player, targetPlayer)) {
+            // Allow self-targeting by name
+            if (targetPlayer == player || canSee(player, targetPlayer)) {
                 foundTarget = targetPlayer;
             } else {
                 // Radius check if not looking directly
@@ -107,6 +106,7 @@ public class NewOrderHandlers {
             NbtCompound ruleData = savedRules.getCompound(i);
             String savedPhrase = ruleData.getString("Phrase");
             String effect = ruleData.getString("Effect");
+            String targetType = ruleData.getString("TargetType");
             int cost = ruleData.getInt("Cost");
 
             if (savedPhrase.equalsIgnoreCase(message)) {
@@ -114,30 +114,68 @@ public class NewOrderHandlers {
 
                 // 1. Check Stamina
                 if (data.currentStamina < cost) {
-                    player.sendMessage(Text.of("§cNot enough stamina for this rule! (" + cost + " needed)"), true);
+                    player.sendMessage(Text.of("§cNot enough stamina! (" + cost + ")"), true);
                     return true;
                 }
 
-                // 2. Check Target
-                if (!data.runtimeTags.containsKey("NEW_ORDER_TARGET")) {
-                    player.sendMessage(Text.of("§cNo target selected! Say an entity name first."), true);
-                    return true;
-                }
+                // 2. Handle Logic based on Target Type
+                if ("TOUCH".equals(targetType)) {
+                    // "Toggle" mode: Prime the next hit
 
-                String targetUuidStr = data.runtimeTags.get("NEW_ORDER_TARGET");
-                UUID targetUuid = UUID.fromString(targetUuidStr);
-                Entity target = ((ServerWorld)player.getWorld()).getEntity(targetUuid);
+                    // Determine who gets the "Primed" status
+                    // If a specific target is locked, prime THEM (so when THEY hit someone, it triggers?)
+                    // OR, does it mean "I prime myself to hit them?"
+                    // User said: "say your own name... next time you... hit someone"
+                    // User said: "say someone else's... next time them hit someone"
 
-                if (target == null || !target.isAlive() || player.distanceTo(target) > 64.0) {
-                    player.sendMessage(Text.of("§cTarget lost or out of range."), true);
-                    return true;
-                }
+                    Entity primedEntity = player; // Default to priming self
 
-                // 3. Activate
-                NewOrderQuirk quirk = (NewOrderQuirk) net.bored.common.QuirkRegistry.get(NewOrderQuirk.ID);
-                if (quirk != null) {
-                    data.currentStamina -= cost;
-                    quirk.activateRule(player, data, instance, savedPhrase, effect, target);
+                    if (data.runtimeTags.containsKey("NEW_ORDER_TARGET")) {
+                        String targetUuidStr = data.runtimeTags.get("NEW_ORDER_TARGET");
+                        UUID targetUuid = UUID.fromString(targetUuidStr);
+                        Entity target = ((ServerWorld)player.getWorld()).getEntity(targetUuid);
+                        if (target != null && target.isAlive()) {
+                            primedEntity = target;
+                        }
+                    }
+
+                    if (primedEntity instanceof LivingEntity livingPrimed && livingPrimed instanceof IQuirkDataAccessor accessor) {
+                        QuirkSystem.QuirkData primedData = accessor.getQuirkData();
+                        primedData.runtimeTags.put("NEW_ORDER_TOUCH_READY", "true");
+                        primedData.runtimeTags.put("NEW_ORDER_TOUCH_EFFECT", effect);
+                        // Store cost to deduct on trigger? Or deduct now?
+                        // Deducting now is simpler.
+                        data.currentStamina -= cost;
+
+                        player.sendMessage(Text.of("§e[New Order] " + primedEntity.getName().getString() + " is ready to strike (" + effect + ")"), true);
+                        player.playSound(net.minecraft.sound.SoundEvents.BLOCK_BEACON_ACTIVATE, 1.0f, 2.0f);
+                    }
+
+                } else {
+                    // FOCUSED (Immediate)
+                    if (!data.runtimeTags.containsKey("NEW_ORDER_TARGET")) {
+                        // If no target selected, try targeting SELF implicitly if phrase implies it?
+                        // No, user removed SELF button, so FOCUSED requires selection.
+                        // Fallback: If phrase spoken, check if it matches user name? No, separate step.
+                        player.sendMessage(Text.of("§cNo target selected! Say a name first."), true);
+                        return true;
+                    }
+
+                    String targetUuidStr = data.runtimeTags.get("NEW_ORDER_TARGET");
+                    UUID targetUuid = UUID.fromString(targetUuidStr);
+                    Entity target = ((ServerWorld)player.getWorld()).getEntity(targetUuid);
+
+                    if (target == null || !target.isAlive() || player.distanceTo(target) > 64.0) {
+                        player.sendMessage(Text.of("§cTarget lost or out of range."), true);
+                        return true;
+                    }
+
+                    // Activate
+                    NewOrderQuirk quirk = (NewOrderQuirk) net.bored.common.QuirkRegistry.get(NewOrderQuirk.ID);
+                    if (quirk != null) {
+                        data.currentStamina -= cost;
+                        quirk.activateRule(player, data, instance, savedPhrase, effect, target);
+                    }
                 }
 
                 return true;
@@ -155,46 +193,19 @@ public class NewOrderHandlers {
     }
 
     private static Entity findClosestEntityOfType(ServerPlayerEntity player, EntityType<?> type, double range) {
-        // 1. Check Raycast (Looking at)
-        Vec3d start = player.getCameraPosVec(1.0f);
-        Vec3d dir = player.getRotationVector();
-        Vec3d end = start.add(dir.multiply(range));
-        Box box = player.getBoundingBox().stretch(dir.multiply(range)).expand(1.0);
-
-        Entity closestLook = null;
-        double closestDist = Double.MAX_VALUE;
-
-        for (Entity e : player.getWorld().getOtherEntities(player, box)) {
-            if (e.getType() == type) {
-                float border = e.getTargetingMargin() + 0.5f;
-                Box hitBox = e.getBoundingBox().expand(border);
-                if (hitBox.raycast(start, end).isPresent()) {
-                    double d = player.squaredDistanceTo(e);
-                    if (d < closestDist) {
-                        closestDist = d;
-                        closestLook = e;
-                    }
-                }
-            }
-        }
-
-        if (closestLook != null) return closestLook;
-
-        // 2. Check Radius (Closest)
         Box searchBox = player.getBoundingBox().expand(range);
-        Entity closestRadius = null;
-        closestDist = Double.MAX_VALUE;
+        Entity closest = null;
+        double closestDist = Double.MAX_VALUE;
 
         for (Entity e : player.getWorld().getOtherEntities(player, searchBox)) {
             if (e.getType() == type) {
                 double d = player.squaredDistanceTo(e);
                 if (d < closestDist) {
                     closestDist = d;
-                    closestRadius = e;
+                    closest = e;
                 }
             }
         }
-
-        return closestRadius;
+        return closest;
     }
 }

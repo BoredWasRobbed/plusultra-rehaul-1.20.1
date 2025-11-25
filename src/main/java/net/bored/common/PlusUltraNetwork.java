@@ -189,6 +189,7 @@ public class PlusUltraNetwork {
         // --- NEW ORDER RULE SYNC ---
         ServerPlayNetworking.registerGlobalReceiver(SYNC_NEW_ORDER_RULE, (server, player, handler, buf, responseSender) -> {
             String phrase = buf.readString();
+            String targetType = buf.readString(); // New Field
             String effect = buf.readString();
             int cost = buf.readInt();
 
@@ -215,17 +216,16 @@ public class PlusUltraNetwork {
                     // Add new rule
                     NbtCompound ruleTag = new NbtCompound();
                     ruleTag.putString("Phrase", phrase);
+                    ruleTag.putString("TargetType", targetType); // Save new field
                     ruleTag.putString("Effect", effect);
                     ruleTag.putInt("Cost", cost);
                     savedRules.add(ruleTag);
 
-                    // Explicitly put it back to ensure save (though NbtList is usually pass-by-reference)
                     newOrder.persistentData.put("SavedRules", savedRules);
 
-                    player.sendMessage(Text.of("§a[New Order] Rule learned: \"" + phrase + "\""), true);
+                    player.sendMessage(Text.of("§a[New Order] Rule: \"" + phrase + "\" -> " + targetType + " -> " + effect), true);
                     sync(player);
                 } else {
-                    // Debug feedback if quirk missing
                     player.sendMessage(Text.of("§cError: You do not have New Order."), true);
                 }
             });
