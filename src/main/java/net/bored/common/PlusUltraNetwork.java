@@ -2,6 +2,7 @@ package net.bored.common;
 
 import net.bored.api.IQuirkDataAccessor;
 import net.bored.api.QuirkSystem;
+import net.bored.common.quirks.NewOrderQuirk;
 import net.fabricmc.fabric.api.networking.v1.PacketByteBufs;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.fabricmc.fabric.api.networking.v1.PlayerLookup;
@@ -29,6 +30,10 @@ public class PlusUltraNetwork {
     public static final Identifier UPGRADE_STAT = new Identifier("plusultra", "upgrade_stat");
     public static final Identifier ADJUST_PERCENTAGE = new Identifier("plusultra", "adjust_percentage");
     public static final Identifier TOGGLE_DESTRUCTION = new Identifier("plusultra", "toggle_destruction");
+
+    // NEW ORDER PACKETS
+    public static final Identifier SYNC_NEW_ORDER_RULE = new Identifier("plusultra", "sync_new_order_rule");
+    public static final Identifier REMOVE_NEW_ORDER_RULE = new Identifier("plusultra", "remove_new_order_rule");
 
     public static void registerServerReceivers() {
         ServerPlayNetworking.registerGlobalReceiver(ACTIVATE_ABILITY, (server, player, handler, buf, responseSender) -> {
@@ -181,6 +186,72 @@ public class PlusUltraNetwork {
             });
         });
 
+        // --- NEW ORDER RULE SYNC ---
+        ServerPlayNetworking.registerGlobalReceiver(SYNC_NEW_ORDER_RULE, (server, player, handler, buf, responseSender) -> {
+            String phrase = buf.readString();
+            String effect = buf.readString();
+            int cost = buf.readInt();
+
+            server.execute(() -> {
+                QuirkSystem.QuirkData data = ((IQuirkDataAccessor) player).getQuirkData();
+
+                // Find New Order Instance
+                QuirkSystem.QuirkData.QuirkInstance newOrder = null;
+                for (QuirkSystem.QuirkData.QuirkInstance q : data.getQuirks()) {
+                    if (q.quirkId.equals("plusultra:new_order")) {
+                        newOrder = q;
+                        break;
+                    }
+                }
+
+                if (newOrder != null) {
+                    // Ensure "SavedRules" list exists
+                    if (!newOrder.persistentData.contains("SavedRules")) {
+                        newOrder.persistentData.put("SavedRules", new NbtList());
+                    }
+
+                    NbtList savedRules = newOrder.persistentData.getList("SavedRules", NbtElement.COMPOUND_TYPE);
+
+                    // Add new rule
+                    NbtCompound ruleTag = new NbtCompound();
+                    ruleTag.putString("Phrase", phrase);
+                    ruleTag.putString("Effect", effect);
+                    ruleTag.putInt("Cost", cost);
+                    savedRules.add(ruleTag);
+
+                    // Explicitly put it back to ensure save (though NbtList is usually pass-by-reference)
+                    newOrder.persistentData.put("SavedRules", savedRules);
+
+                    player.sendMessage(Text.of("§a[New Order] Rule learned: \"" + phrase + "\""), true);
+                    sync(player);
+                } else {
+                    // Debug feedback if quirk missing
+                    player.sendMessage(Text.of("§cError: You do not have New Order."), true);
+                }
+            });
+        });
+
+        // --- NEW ORDER REMOVE RULE ---
+        ServerPlayNetworking.registerGlobalReceiver(REMOVE_NEW_ORDER_RULE, (server, player, handler, buf, responseSender) -> {
+            int index = buf.readInt();
+            server.execute(() -> {
+                QuirkSystem.QuirkData data = ((IQuirkDataAccessor) player).getQuirkData();
+                QuirkSystem.QuirkData.QuirkInstance newOrder = null;
+                for (QuirkSystem.QuirkData.QuirkInstance q : data.getQuirks()) {
+                    if (q.quirkId.equals("plusultra:new_order")) {
+                        newOrder = q;
+                        break;
+                    }
+                }
+                if (newOrder != null) {
+                    NewOrderQuirk quirk = (NewOrderQuirk) QuirkRegistry.get(new Identifier("plusultra:new_order"));
+                    if (quirk != null) {
+                        quirk.removeRule(player, newOrder, index);
+                    }
+                }
+            });
+        });
+
         ServerPlayNetworking.registerGlobalReceiver(ADJUST_PERCENTAGE, (server, player, handler, buf, responseSender) -> {
             int direction = buf.readInt();
             server.execute(() -> {
@@ -188,8 +259,6 @@ public class PlusUltraNetwork {
                 if (data.getQuirks().isEmpty()) return;
                 QuirkSystem.QuirkData.QuirkInstance instance = data.getQuirks().get(data.getSelectedQuirkIndex());
 
-                // --- COPY PROXY LOGIC FOR SERVER ---
-                // We need to target the INNER data if it's a Copy quirk
                 NbtCompound targetData = instance.persistentData;
                 String targetQuirkId = instance.quirkId;
 
@@ -208,11 +277,10 @@ public class PlusUltraNetwork {
                 }
 
                 boolean isStockpile = "plusultra:stockpile".equals(targetQuirkId);
-                // OFA fusion check (only for root instance, logic implies AFO/OFA aren't copied usually)
                 if (!isStockpile && instance.persistentData.contains("FirstQuirk")) {
                     if ("plusultra:stockpile".equals(instance.persistentData.getString("FirstQuirk"))) {
                         isStockpile = true;
-                        targetData = instance.persistentData; // Reset to root for OFA
+                        targetData = instance.persistentData;
                     }
                 }
 
@@ -226,7 +294,6 @@ public class PlusUltraNetwork {
                     if (newSelected < 0.0f) newSelected = 0.0f;
                     targetData.putFloat("SelectedPercent", newSelected);
 
-                    // Save back if it was a copy sub-compound
                     if ("plusultra:copy".equals(instance.quirkId) && targetData != instance.persistentData) {
                         int slot = instance.persistentData.getInt("ActiveSlot");
                         String key = "Slot_" + slot;
@@ -238,7 +305,6 @@ public class PlusUltraNetwork {
                     sync(player);
                 }
                 else if ("plusultra:warp_gate".equals(targetQuirkId)) {
-                    // Warp Gate Anchor Cycling
                     if (targetData.contains("Anchors")) {
                         NbtList anchors = targetData.getList("Anchors", NbtElement.COMPOUND_TYPE);
                         if (!anchors.isEmpty()) {
@@ -250,7 +316,6 @@ public class PlusUltraNetwork {
                             NbtCompound tag = anchors.getCompound(next);
                             player.sendMessage(Text.of("§5Selected Anchor: " + tag.getString("Name")), true);
 
-                            // Save back if copy
                             if ("plusultra:copy".equals(instance.quirkId) && targetData != instance.persistentData) {
                                 int slot = instance.persistentData.getInt("ActiveSlot");
                                 String key = "Slot_" + slot;

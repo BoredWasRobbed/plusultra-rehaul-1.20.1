@@ -4,6 +4,7 @@ import net.bored.common.PlusUltraNetwork;
 import net.bored.api.QuirkSystem;
 import net.bored.api.IQuirkDataAccessor;
 import net.bored.common.quirks.ErasureQuirk;
+import net.bored.client.NewOrderScreen;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
@@ -20,6 +21,7 @@ import net.minecraft.entity.projectile.ProjectileEntity;
 import net.minecraft.network.PacketByteBuf;
 import net.minecraft.particle.ParticleTypes;
 import net.minecraft.text.Text;
+import net.minecraft.util.Identifier;
 import net.minecraft.util.math.Box;
 import net.minecraft.util.math.MathHelper;
 import org.lwjgl.glfw.GLFW;
@@ -46,12 +48,20 @@ public class PlusUltraClientHandlers implements ClientModInitializer {
         statsKey = KeyBindingHelper.registerKeyBinding(new KeyBinding("key.plusultra.stats", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_K, "category.plusultra.main"));
         specialKey = KeyBindingHelper.registerKeyBinding(new KeyBinding("key.plusultra.special", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_G, "category.plusultra.main"));
 
+        // Register Packet for opening New Order Menu
+        ClientPlayNetworking.registerGlobalReceiver(new Identifier("plusultra", "open_new_order_menu"), (client, handler, buf, responseSender) -> {
+            int entityId = buf.readInt();
+            client.execute(() -> {
+                client.setScreen(new NewOrderScreen());
+            });
+        });
+
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             if (client.player == null || client.world == null) return;
 
             QuirkSystem.QuirkData pData = ((IQuirkDataAccessor)client.player).getQuirkData();
 
-            // --- DANGER SENSE VISUALS (Client Side Detection) ---
+            // --- DANGER SENSE VISUALS ---
             if (!pData.getQuirks().isEmpty()) {
                 boolean hasDangerSense = false;
                 for (var q : pData.getQuirks()) {
@@ -64,40 +74,25 @@ public class PlusUltraClientHandlers implements ClientModInitializer {
                 if (hasDangerSense) {
                     double range = 15.0 + (pData.meta * 1.5);
                     Box box = client.player.getBoundingBox().expand(range);
-
-                    // Scan for dangerous entities within range
                     List<Entity> nearbyEntities = client.world.getOtherEntities(client.player, box);
 
                     for (Entity e : nearbyEntities) {
                         boolean isDangerous = false;
-
                         if (e instanceof ProjectileEntity p) {
-                            if (!p.isOnGround() && p.getOwner() != client.player) {
-                                isDangerous = true;
-                            }
+                            if (!p.isOnGround() && p.getOwner() != client.player) isDangerous = true;
                         } else if (e instanceof HostileEntity m) {
-                            if (m.getTarget() == client.player) {
-                                isDangerous = true;
-                            }
+                            if (m.getTarget() == client.player) isDangerous = true;
                         }
 
-                        // Apply Glow if dangerous, Remove Glow if safe (but only if we set it?
-                        // Simplified: we toggle based on danger status. This might flicker if server overrides, but works for client visual)
-                        if (isDangerous) {
-                            e.setGlowing(true);
-                        } else {
-                            // Optional: Reset glow if it was set by us.
-                            // Safe to set false here as Hostile Mobs don't usually glow naturally.
-                            // We check distance to avoid clearing glow from far away things we didn't touch.
-                            if (e.isGlowing() && e.squaredDistanceTo(client.player) < (range * range)) {
-                                e.setGlowing(false);
-                            }
+                        if (isDangerous) e.setGlowing(true);
+                        else {
+                            if (e.isGlowing() && e.squaredDistanceTo(client.player) < (range * range)) e.setGlowing(false);
                         }
                     }
                 }
             }
 
-            // --- ERASURE INDICATOR LOGIC ---
+            // --- ERASURE INDICATOR ---
             if (!pData.getQuirks().isEmpty()) {
                 QuirkSystem.QuirkData.QuirkInstance activeQ = pData.getQuirks().get(pData.getSelectedQuirkIndex());
                 if ("plusultra:erasure".equals(activeQ.quirkId)) {
@@ -114,7 +109,7 @@ public class PlusUltraClientHandlers implements ClientModInitializer {
                 }
             }
 
-            // --- AUTO-DISABLE AFO SIGHT IF QUIRK SWITCHED/LOST ---
+            // --- AFO SIGHT AUTO-DISABLE ---
             if (afoSightActive) {
                 boolean shouldDisable = true;
                 if (!pData.getQuirks().isEmpty()) {
