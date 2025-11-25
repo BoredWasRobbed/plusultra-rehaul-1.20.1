@@ -188,8 +188,6 @@ public class PlusUltraNetwork {
                 if (data.getQuirks().isEmpty()) return;
                 QuirkSystem.QuirkData.QuirkInstance instance = data.getQuirks().get(data.getSelectedQuirkIndex());
 
-                // --- COPY PROXY LOGIC FOR SERVER ---
-                // We need to target the INNER data if it's a Copy quirk
                 NbtCompound targetData = instance.persistentData;
                 String targetQuirkId = instance.quirkId;
 
@@ -208,11 +206,10 @@ public class PlusUltraNetwork {
                 }
 
                 boolean isStockpile = "plusultra:stockpile".equals(targetQuirkId);
-                // OFA fusion check (only for root instance, logic implies AFO/OFA aren't copied usually)
                 if (!isStockpile && instance.persistentData.contains("FirstQuirk")) {
                     if ("plusultra:stockpile".equals(instance.persistentData.getString("FirstQuirk"))) {
                         isStockpile = true;
-                        targetData = instance.persistentData; // Reset to root for OFA
+                        targetData = instance.persistentData;
                     }
                 }
 
@@ -226,7 +223,6 @@ public class PlusUltraNetwork {
                     if (newSelected < 0.0f) newSelected = 0.0f;
                     targetData.putFloat("SelectedPercent", newSelected);
 
-                    // Save back if it was a copy sub-compound
                     if ("plusultra:copy".equals(instance.quirkId) && targetData != instance.persistentData) {
                         int slot = instance.persistentData.getInt("ActiveSlot");
                         String key = "Slot_" + slot;
@@ -238,7 +234,6 @@ public class PlusUltraNetwork {
                     sync(player);
                 }
                 else if ("plusultra:warp_gate".equals(targetQuirkId)) {
-                    // Warp Gate Anchor Cycling
                     if (targetData.contains("Anchors")) {
                         NbtList anchors = targetData.getList("Anchors", NbtElement.COMPOUND_TYPE);
                         if (!anchors.isEmpty()) {
@@ -250,7 +245,6 @@ public class PlusUltraNetwork {
                             NbtCompound tag = anchors.getCompound(next);
                             player.sendMessage(Text.of("§5Selected Anchor: " + tag.getString("Name")), true);
 
-                            // Save back if copy
                             if ("plusultra:copy".equals(instance.quirkId) && targetData != instance.persistentData) {
                                 int slot = instance.persistentData.getInt("ActiveSlot");
                                 String key = "Slot_" + slot;

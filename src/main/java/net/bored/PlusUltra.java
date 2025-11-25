@@ -145,8 +145,6 @@ public class PlusUltra implements ModInitializer {
 		});
 
 		// FIX: Use AFTER_RESPAWN to sync data.
-		// COPY_FROM happens during the cloning process, often before the client has fully switched context.
-		// AFTER_RESPAWN ensures the entity is valid in the world and the client is ready to receive packets for it.
 		ServerPlayerEvents.AFTER_RESPAWN.register((oldPlayer, newPlayer, alive) -> {
 			PlusUltraNetwork.sync(newPlayer);
 		});
