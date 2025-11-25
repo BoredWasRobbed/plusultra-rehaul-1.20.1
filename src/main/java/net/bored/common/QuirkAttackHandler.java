@@ -3,6 +3,7 @@ package net.bored.common;
 import net.bored.api.QuirkSystem;
 import net.bored.api.IQuirkDataAccessor;
 import net.bored.common.quirks.CopyQuirk;
+import net.bored.common.quirks.NewOrderQuirk;
 import net.fabricmc.fabric.api.event.player.AttackEntityCallback;
 import net.fabricmc.fabric.api.networking.v1.PacketByteBufs;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
@@ -31,6 +32,35 @@ public class QuirkAttackHandler {
             if (!(entity instanceof LivingEntity target)) return ActionResult.PASS;
 
             QuirkSystem.QuirkData attackerData = ((IQuirkDataAccessor) player).getQuirkData();
+
+            // --- NEW ORDER TOUCH LOGIC ---
+            if (attackerData.runtimeTags.containsKey("NEW_ORDER_TOUCH_READY")) {
+                String effect = attackerData.runtimeTags.get("NEW_ORDER_TOUCH_EFFECT");
+
+                // Consume tag immediately
+                attackerData.runtimeTags.remove("NEW_ORDER_TOUCH_READY");
+                attackerData.runtimeTags.remove("NEW_ORDER_TOUCH_EFFECT");
+
+                // Find New Order Instance to track active rules (even if triggered via "Touch")
+                QuirkSystem.QuirkData.QuirkInstance newOrderInstance = null;
+                for (QuirkSystem.QuirkData.QuirkInstance q : attackerData.getQuirks()) {
+                    if (q.quirkId.equals("plusultra:new_order")) {
+                        newOrderInstance = q;
+                        break;
+                    }
+                }
+
+                if (newOrderInstance != null) {
+                    NewOrderQuirk quirk = (NewOrderQuirk) QuirkRegistry.get(new Identifier("plusultra:new_order"));
+                    if (quirk != null) {
+                        // Apply as a full rule
+                        quirk.activateRule((ServerPlayerEntity)player, attackerData, newOrderInstance, "Touch Trigger", effect, target);
+                    }
+                } else {
+                    player.sendMessage(Text.of("§e[New Order] Touch effect triggered!"), true);
+                    // Fallback simple application if they somehow have the tag but not the quirk (e.g. stolen)
+                }
+            }
 
             // --- AFO LOGIC ---
             if (attackerData.runtimeTags.containsKey("AFO_MODE")) {
