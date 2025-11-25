@@ -75,6 +75,9 @@ public class PlusUltraCommands {
                         .then(CommandManager.literal("get")
                                 .then(CommandManager.argument("target", EntityArgumentType.entity())
                                         .executes(ctx -> getQuirks(ctx.getSource(), EntityArgumentType.getEntity(ctx, "target")))))
+                        .then(CommandManager.literal("awaken")
+                                .then(CommandManager.argument("target", EntityArgumentType.entity())
+                                        .executes(ctx -> toggleAwaken(ctx.getSource(), EntityArgumentType.getEntity(ctx, "target")))))
                         .then(CommandManager.literal("list")
                                 .executes(ctx -> listRegistryQuirks(ctx.getSource())))
                 )
@@ -300,6 +303,35 @@ public class PlusUltraCommands {
             sb.append(", ");
         }
         source.sendFeedback(() -> Text.of(sb.substring(0, sb.length() - 2)), false);
+        return 1;
+    }
+
+    private static int toggleAwaken(ServerCommandSource source, Entity target) {
+        if (!(target instanceof LivingEntity livingTarget)) return 0;
+        QuirkSystem.QuirkData data = ((IQuirkDataAccessor) livingTarget).getQuirkData();
+
+        if (data.getQuirks().isEmpty()) {
+            source.sendError(Text.of("Target has no quirks to awaken."));
+            return 0;
+        }
+
+        // Awaken the currently selected quirk
+        int index = data.getSelectedQuirkIndex();
+        if (index >= 0 && index < data.getQuirks().size()) {
+            QuirkSystem.QuirkData.QuirkInstance instance = data.getQuirks().get(index);
+            instance.awakened = !instance.awakened;
+
+            String state = instance.awakened ? "Awakened" : "Dormant";
+            String quirkName = QuirkSystem.getFormalName(instance);
+
+            source.sendFeedback(() -> Text.of("Set " + quirkName + " to " + state + " for " + target.getName().getString()), true);
+
+            if (livingTarget instanceof ServerPlayerEntity player) {
+                PlusUltraNetwork.sync(player);
+                String color = instance.awakened ? "§d" : "§7";
+                player.sendMessage(Text.of(color + "Your quirk has " + state.toLowerCase() + "!"), true);
+            }
+        }
         return 1;
     }
 

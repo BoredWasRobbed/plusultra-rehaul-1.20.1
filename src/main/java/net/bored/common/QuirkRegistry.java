@@ -23,6 +23,8 @@ public class QuirkRegistry {
         register(new BloodletQuirk());
         register(new LuminescenceQuirk());
         register(new BloodcurdleQuirk());
+        register(new InvisibilityQuirk());
+        register(new ErasureQuirk());
     }
 
     public static void register(QuirkSystem.Quirk quirk) {

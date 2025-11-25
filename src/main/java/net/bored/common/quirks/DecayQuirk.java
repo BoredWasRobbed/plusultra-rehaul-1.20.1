@@ -73,7 +73,9 @@ public class DecayQuirk extends QuirkSystem.Quirk {
 
             @Override
             public boolean isHidden(QuirkSystem.QuirkData data, QuirkSystem.QuirkData.QuirkInstance instance) {
-                return super.isHidden(data, instance) || !instance.awakened;
+                // If Awakened, show regardless of level. If not Awakened, check level via super.
+                if (instance.awakened) return false;
+                return super.isHidden(data, instance);
             }
 
             @Override
@@ -139,7 +141,9 @@ public class DecayQuirk extends QuirkSystem.Quirk {
 
             @Override
             public boolean isHidden(QuirkSystem.QuirkData data, QuirkSystem.QuirkData.QuirkInstance instance) {
-                return super.isHidden(data, instance) || !instance.awakened;
+                // If Awakened, show regardless of level.
+                if (instance.awakened) return false;
+                return super.isHidden(data, instance);
             }
 
             @Override
@@ -175,7 +179,9 @@ public class DecayQuirk extends QuirkSystem.Quirk {
         this.addAbility(new QuirkSystem.Ability("Sudden Pit", QuirkSystem.AbilityType.HOLD, 300, 30, 15.0) {
             @Override
             public boolean isHidden(QuirkSystem.QuirkData data, QuirkSystem.QuirkData.QuirkInstance instance) {
-                return super.isHidden(data, instance) || !instance.awakened;
+                // If Awakened, show regardless of level.
+                if (instance.awakened) return false;
+                return super.isHidden(data, instance);
             }
 
             @Override

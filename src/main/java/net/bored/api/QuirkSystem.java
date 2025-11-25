@@ -46,6 +46,12 @@ public class QuirkSystem {
     }
 
     public static String getFormalName(QuirkData.QuirkInstance instance) {
+        // DEFAULT: Do not show owner name (Clean display for everyone)
+        return getFormalName(instance.quirkId);
+    }
+
+    public static String getFormalNameWithOwner(QuirkData.QuirkInstance instance) {
+        // SPECIAL: Show owner name (For AFO Sight / Admin tools)
         String baseName = getFormalName(instance.quirkId);
         if (instance.persistentData.contains("OriginalOwner")) {
             String owner = instance.persistentData.getString("OriginalOwner");
@@ -169,6 +175,9 @@ public class QuirkSystem {
 
         public boolean canUse(QuirkData data, QuirkData.QuirkInstance instance) {
             if (instance.isLocked) return false;
+            // --- ERASURE CHECK ---
+            if (data.runtimeTags.containsKey("ERASED")) return false;
+
             if (isHidden(data, instance)) return false;
             return data.level >= requiredLevel && isReady(instance) && data.currentStamina >= staminaCost;
         }
@@ -208,7 +217,6 @@ public class QuirkSystem {
         public int level = 1, experience = 0;
         public double currentStamina = 100;
         public boolean cooldownsDisabled = false;
-        // New Field: Blood Type
         public String bloodType = "";
 
         private final List<QuirkInstance> quirks = new ArrayList<>();
@@ -280,9 +288,21 @@ public class QuirkSystem {
             staminaMax = Math.min(staminaMax, 50);
             meta = Math.min(meta, 50);
 
-            // Ensure Blood Type exists
             if (bloodType == null || bloodType.isEmpty()) {
                 assignRandomBloodType();
+            }
+
+            // --- ERASURE CHECK: DECAY TIMER ---
+            if (runtimeTags.containsKey("ERASED")) {
+                int timer = Integer.parseInt(runtimeTags.getOrDefault("ERASED", "0"));
+                if (timer > 0) {
+                    runtimeTags.put("ERASED", String.valueOf(timer - 1));
+                } else {
+                    runtimeTags.remove("ERASED");
+                    if (entity instanceof PlayerEntity p) {
+                        p.sendMessage(Text.of("§aYour quirks have returned."), true);
+                    }
+                }
             }
 
             // --- BLOODCURDLE PARALYSIS LOGIC ---
@@ -291,13 +311,11 @@ public class QuirkSystem {
                 if (timer > 0) {
                     runtimeTags.put("BLOODCURDLE_TIMER", String.valueOf(timer - 1));
 
-                    // Apply Paralysis Effects
                     entity.addStatusEffect(new StatusEffectInstance(StatusEffects.SLOWNESS, 10, 5, false, false));
                     entity.addStatusEffect(new StatusEffectInstance(StatusEffects.WEAKNESS, 10, 5, false, false));
                     entity.addStatusEffect(new StatusEffectInstance(StatusEffects.MINING_FATIGUE, 10, 5, false, false));
                     entity.addStatusEffect(new StatusEffectInstance(StatusEffects.JUMP_BOOST, 10, 250, false, false)); // Negative jump
 
-                    // Stop movement (Server side mainly)
                     if (!entity.getWorld().isClient) {
                         entity.setVelocity(0, entity.getVelocity().y, 0);
                         entity.velocityModified = true;
@@ -321,10 +339,13 @@ public class QuirkSystem {
             }
 
             if (!entity.getWorld().isClient) {
+                // If Erased, do NOT apply stats
+                boolean isErased = runtimeTags.containsKey("ERASED");
+
                 EntityAttributeInstance movementSpeed = entity.getAttributeInstance(EntityAttributes.GENERIC_MOVEMENT_SPEED);
                 if (movementSpeed != null) {
                     if (movementSpeed.getModifier(SPEED_MODIFIER_ID) != null) movementSpeed.removeModifier(SPEED_MODIFIER_ID);
-                    if (speed > 0) {
+                    if (speed > 0 && !isErased) {
                         double amount = speed * 0.03;
                         movementSpeed.addTemporaryModifier(new EntityAttributeModifier(SPEED_MODIFIER_ID, "Quirk Speed", amount, EntityAttributeModifier.Operation.MULTIPLY_BASE));
                     }
@@ -332,14 +353,14 @@ public class QuirkSystem {
 
                 if (entity instanceof PlayerEntity player) {
                     float newStepHeight = 0.6f;
-                    if (speed >= 5) newStepHeight = 1.5f;
+                    if (speed >= 5 && !isErased) newStepHeight = 1.5f;
                     if (player.getStepHeight() != newStepHeight) player.setStepHeight(newStepHeight);
                 }
 
                 EntityAttributeInstance maxHealth = entity.getAttributeInstance(EntityAttributes.GENERIC_MAX_HEALTH);
                 if (maxHealth != null) {
                     if (maxHealth.getModifier(HEALTH_MODIFIER_ID) != null) maxHealth.removeModifier(HEALTH_MODIFIER_ID);
-                    if (endurance > 0) {
+                    if (endurance > 0 && !isErased) {
                         double amount = endurance * 2.0;
                         maxHealth.addTemporaryModifier(new EntityAttributeModifier(HEALTH_MODIFIER_ID, "Quirk Health", amount, EntityAttributeModifier.Operation.ADDITION));
                     }
@@ -348,13 +369,13 @@ public class QuirkSystem {
                 EntityAttributeInstance attackDamage = entity.getAttributeInstance(EntityAttributes.GENERIC_ATTACK_DAMAGE);
                 if (attackDamage != null) {
                     if (attackDamage.getModifier(ATTACK_MODIFIER_ID) != null) attackDamage.removeModifier(ATTACK_MODIFIER_ID);
-                    if (strength > 0) {
+                    if (strength > 0 && !isErased) {
                         double amount = strength * 0.5;
                         attackDamage.addTemporaryModifier(new EntityAttributeModifier(ATTACK_MODIFIER_ID, "Quirk Strength", amount, EntityAttributeModifier.Operation.ADDITION));
                     }
                 }
 
-                if (entity instanceof PlayerEntity player && endurance > 0) {
+                if (entity instanceof PlayerEntity player && endurance > 0 && !isErased) {
                     if (entity.age % 20 == 0) {
                         float currentExhaustion = player.getHungerManager().getExhaustion();
                         if (currentExhaustion > 0) {
@@ -380,7 +401,8 @@ public class QuirkSystem {
                             ability.setCurrentCooldown(instance, 0);
                         }
                     }
-                    if (instance.isPassivesActive && !instance.isLocked) {
+                    // Passives Check: Must not be locked AND not Erased
+                    if (instance.isPassivesActive && !instance.isLocked && !runtimeTags.containsKey("ERASED")) {
                         quirk.onUpdate(entity, this, instance);
                     }
                 }

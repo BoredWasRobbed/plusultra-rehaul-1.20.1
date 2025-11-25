@@ -41,8 +41,8 @@ public class AFOHudOverlay implements HudRenderCallback {
 
             // Render List
             for (QuirkSystem.QuirkData.QuirkInstance instance : data.getQuirks()) {
-                // UPDATED: Use QuirkSystem to get formal name (includes Owner info)
-                String name = QuirkSystem.getFormalName(instance);
+                // UPDATED: Use getFormalNameWithOwner to reveal the owner only here
+                String name = QuirkSystem.getFormalNameWithOwner(instance);
                 int color = 0xFFAA00; // Gold for quirk names
 
                 if (instance.innate) {

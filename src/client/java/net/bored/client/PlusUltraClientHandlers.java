@@ -3,6 +3,8 @@ package net.bored.client;
 import net.bored.common.PlusUltraNetwork;
 import net.bored.api.QuirkSystem;
 import net.bored.api.IQuirkDataAccessor;
+// Added import for Erasure check
+import net.bored.common.quirks.ErasureQuirk;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
@@ -12,7 +14,9 @@ import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.option.KeyBinding;
 import net.minecraft.client.util.InputUtil;
+import net.minecraft.entity.LivingEntity;
 import net.minecraft.network.PacketByteBuf;
+import net.minecraft.particle.ParticleTypes;
 import net.minecraft.text.Text;
 import net.minecraft.util.Identifier;
 import net.minecraft.util.math.MathHelper;
@@ -41,7 +45,28 @@ public class PlusUltraClientHandlers implements ClientModInitializer {
         specialKey = KeyBindingHelper.registerKeyBinding(new KeyBinding("key.plusultra.special", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_G, "category.plusultra.main"));
 
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
-            if (client.player == null) return;
+            if (client.player == null || client.world == null) return;
+
+            // --- ERASURE INDICATOR LOGIC ---
+            // Check if player has Erasure selected and active
+            QuirkSystem.QuirkData pData = ((IQuirkDataAccessor)client.player).getQuirkData();
+            if (!pData.getQuirks().isEmpty()) {
+                QuirkSystem.QuirkData.QuirkInstance activeQ = pData.getQuirks().get(pData.getSelectedQuirkIndex());
+                if ("plusultra:erasure".equals(activeQ.quirkId)) {
+                    // Only if "Erase" ability (index 0) is selected AND NOT already active
+                    if (pData.getSelectedAbilityIndex() == 0 && !pData.runtimeTags.containsKey("ERASURE_ACTIVE")) {
+                        LivingEntity potential = ErasureQuirk.findTargetInLineOfSight(client.player, 30.0);
+                        if (potential != null) {
+                            // Spawn particles at target
+                            client.world.addParticle(ParticleTypes.CRIT,
+                                    potential.getX(),
+                                    potential.getY() + potential.getHeight() + 0.5,
+                                    potential.getZ(),
+                                    0, 0, 0);
+                        }
+                    }
+                }
+            }
 
             // --- AUTO-DISABLE AFO SIGHT IF QUIRK SWITCHED/LOST ---
             if (afoSightActive) {

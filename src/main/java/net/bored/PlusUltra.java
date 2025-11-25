@@ -78,6 +78,13 @@ public class PlusUltra implements ModInitializer {
 			newAccessor.getQuirkData().readFromNbt(nbt);
 		});
 
+		// FIX: Use AFTER_RESPAWN to sync data.
+		// COPY_FROM happens during the cloning process, often before the client has fully switched context.
+		// AFTER_RESPAWN ensures the entity is valid in the world and the client is ready to receive packets for it.
+		ServerPlayerEvents.AFTER_RESPAWN.register((oldPlayer, newPlayer, alive) -> {
+			PlusUltraNetwork.sync(newPlayer);
+		});
+
 		EntityTrackingEvents.START_TRACKING.register((trackedEntity, player) -> {
 			if (trackedEntity instanceof LivingEntity living) {
 				PlusUltraNetwork.syncToPlayer(living, player);
