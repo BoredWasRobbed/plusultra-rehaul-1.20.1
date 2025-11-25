@@ -215,6 +215,9 @@ public class QuirkSystem {
         public int strength = 0, endurance = 0, speed = 0, staminaMax = 0, meta = 0;
         public int statPoints = 1;
         public int level = 1, experience = 0;
+        // Hardcore Tracking
+        public int deaths = 0;
+
         public double currentStamina = 100;
         public boolean cooldownsDisabled = false;
         public String bloodType = "";
@@ -431,6 +434,7 @@ public class QuirkSystem {
             nbt.putInt("StatPoints", statPoints);
             nbt.putInt("Level", level);
             nbt.putInt("XP", experience);
+            nbt.putInt("Deaths", deaths);
             nbt.putDouble("StaminaCur", currentStamina);
             nbt.putBoolean("CooldownsDisabled", cooldownsDisabled);
             nbt.putInt("SelectedQ", selectedQuirkIndex);
@@ -467,6 +471,7 @@ public class QuirkSystem {
             if (nbt.contains("StatPoints")) statPoints = nbt.getInt("StatPoints");
             if (nbt.contains("Level")) level = nbt.getInt("Level");
             if (nbt.contains("XP")) experience = nbt.getInt("XP");
+            if (nbt.contains("Deaths")) deaths = nbt.getInt("Deaths");
             if (nbt.contains("StaminaCur")) currentStamina = nbt.getDouble("StaminaCur");
             if (nbt.contains("CooldownsDisabled")) cooldownsDisabled = nbt.getBoolean("CooldownsDisabled");
             if (nbt.contains("PlayerData")) persistentData = nbt.getCompound("PlayerData");

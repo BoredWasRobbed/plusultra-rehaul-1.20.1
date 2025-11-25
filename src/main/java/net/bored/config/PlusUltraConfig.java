@@ -23,6 +23,16 @@ public class PlusUltraConfig {
     public boolean limitUniqueQuirks = true; // For OFA/AFO specifically
     public boolean uniqueQuirks = false; // New: For ALL high-tier quirks
 
+    // --- Hardcore Options ---
+    public boolean hardcoreMode = false;
+    public int lives = 1;
+    public boolean quirkReset = false;
+    public boolean awakeningReset = false;
+    public boolean levelReset = false;
+    public boolean pointsReset = false;
+    public boolean statsReset = false;
+    public boolean expReset = false;
+
     // --- Mob Spawn Options ---
     public boolean mobsCanSpawnWithQuirks = true;
     public double mobQuirkChance = 0.05; // 5% chance by default
@@ -73,13 +83,34 @@ public class PlusUltraConfig {
                             key = key.substring(1, key.length() - 1);
                         }
 
+                        // General
                         if (key.equals("disableQuirkDestruction")) {
                             INSTANCE.disableQuirkDestruction = Boolean.parseBoolean(value);
                         } else if (key.equals("limitUniqueQuirks")) {
                             INSTANCE.limitUniqueQuirks = Boolean.parseBoolean(value);
                         } else if (key.equals("uniqueQuirks")) {
                             INSTANCE.uniqueQuirks = Boolean.parseBoolean(value);
-                        } else if (key.equals("mobsCanSpawnWithQuirks")) {
+                        }
+                        // Hardcore
+                        else if (key.equals("hardcoreMode")) {
+                            INSTANCE.hardcoreMode = Boolean.parseBoolean(value);
+                        } else if (key.equals("lives")) {
+                            try { INSTANCE.lives = Integer.parseInt(value); } catch (NumberFormatException e) { INSTANCE.lives = 1; }
+                        } else if (key.equals("quirkReset")) {
+                            INSTANCE.quirkReset = Boolean.parseBoolean(value);
+                        } else if (key.equals("awakeningReset")) {
+                            INSTANCE.awakeningReset = Boolean.parseBoolean(value);
+                        } else if (key.equals("levelReset")) {
+                            INSTANCE.levelReset = Boolean.parseBoolean(value);
+                        } else if (key.equals("pointsReset")) {
+                            INSTANCE.pointsReset = Boolean.parseBoolean(value);
+                        } else if (key.equals("statsReset")) {
+                            INSTANCE.statsReset = Boolean.parseBoolean(value);
+                        } else if (key.equals("expReset")) {
+                            INSTANCE.expReset = Boolean.parseBoolean(value);
+                        }
+                        // Mobs
+                        else if (key.equals("mobsCanSpawnWithQuirks")) {
                             INSTANCE.mobsCanSpawnWithQuirks = Boolean.parseBoolean(value);
                         } else if (key.equals("mobQuirkChance")) {
                             try {
@@ -151,6 +182,25 @@ public class PlusUltraConfig {
             writer.println("limitUniqueQuirks = " + INSTANCE.limitUniqueQuirks);
             writer.println("# If true, ALL quirks (except lower tier ones like Regen) can only be held by one entity per world.");
             writer.println("uniqueQuirks = " + INSTANCE.uniqueQuirks);
+            writer.println("");
+
+            writer.println("[Hardcore]");
+            writer.println("# Enable hardcore reset mechanics on death.");
+            writer.println("hardcoreMode = " + INSTANCE.hardcoreMode);
+            writer.println("# Number of deaths before data reset logic triggers.");
+            writer.println("lives = " + INSTANCE.lives);
+            writer.println("# Reset quirks on full death.");
+            writer.println("quirkReset = " + INSTANCE.quirkReset);
+            writer.println("# Un-awaken quirks on full death.");
+            writer.println("awakeningReset = " + INSTANCE.awakeningReset);
+            writer.println("# Reset Level (and thus Exp, Points, Stats) on full death.");
+            writer.println("levelReset = " + INSTANCE.levelReset);
+            writer.println("# Reset Stat Points on full death (ignored if levelReset is true).");
+            writer.println("pointsReset = " + INSTANCE.pointsReset);
+            writer.println("# Reset Attribute Stats (STR, END, etc) on full death (ignored if levelReset is true).");
+            writer.println("statsReset = " + INSTANCE.statsReset);
+            writer.println("# Reset Experience on full death (ignored if levelReset is true).");
+            writer.println("expReset = " + INSTANCE.expReset);
             writer.println("");
 
             writer.println("[MobSpawning]");

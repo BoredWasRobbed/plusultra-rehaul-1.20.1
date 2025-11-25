@@ -3,7 +3,6 @@ package net.bored.client;
 import net.bored.common.PlusUltraNetwork;
 import net.bored.api.QuirkSystem;
 import net.bored.api.IQuirkDataAccessor;
-// Added import for Erasure check
 import net.bored.common.quirks.ErasureQuirk;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
@@ -14,11 +13,14 @@ import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.option.KeyBinding;
 import net.minecraft.client.util.InputUtil;
+import net.minecraft.entity.Entity;
 import net.minecraft.entity.LivingEntity;
+import net.minecraft.entity.mob.HostileEntity;
+import net.minecraft.entity.projectile.ProjectileEntity;
 import net.minecraft.network.PacketByteBuf;
 import net.minecraft.particle.ParticleTypes;
 import net.minecraft.text.Text;
-import net.minecraft.util.Identifier;
+import net.minecraft.util.math.Box;
 import net.minecraft.util.math.MathHelper;
 import org.lwjgl.glfw.GLFW;
 
@@ -47,17 +49,61 @@ public class PlusUltraClientHandlers implements ClientModInitializer {
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             if (client.player == null || client.world == null) return;
 
-            // --- ERASURE INDICATOR LOGIC ---
-            // Check if player has Erasure selected and active
             QuirkSystem.QuirkData pData = ((IQuirkDataAccessor)client.player).getQuirkData();
+
+            // --- DANGER SENSE VISUALS (Client Side Detection) ---
+            if (!pData.getQuirks().isEmpty()) {
+                boolean hasDangerSense = false;
+                for (var q : pData.getQuirks()) {
+                    if ("plusultra:danger_sense".equals(q.quirkId)) {
+                        hasDangerSense = true;
+                        break;
+                    }
+                }
+
+                if (hasDangerSense) {
+                    double range = 15.0 + (pData.meta * 1.5);
+                    Box box = client.player.getBoundingBox().expand(range);
+
+                    // Scan for dangerous entities within range
+                    List<Entity> nearbyEntities = client.world.getOtherEntities(client.player, box);
+
+                    for (Entity e : nearbyEntities) {
+                        boolean isDangerous = false;
+
+                        if (e instanceof ProjectileEntity p) {
+                            if (!p.isOnGround() && p.getOwner() != client.player) {
+                                isDangerous = true;
+                            }
+                        } else if (e instanceof HostileEntity m) {
+                            if (m.getTarget() == client.player) {
+                                isDangerous = true;
+                            }
+                        }
+
+                        // Apply Glow if dangerous, Remove Glow if safe (but only if we set it?
+                        // Simplified: we toggle based on danger status. This might flicker if server overrides, but works for client visual)
+                        if (isDangerous) {
+                            e.setGlowing(true);
+                        } else {
+                            // Optional: Reset glow if it was set by us.
+                            // Safe to set false here as Hostile Mobs don't usually glow naturally.
+                            // We check distance to avoid clearing glow from far away things we didn't touch.
+                            if (e.isGlowing() && e.squaredDistanceTo(client.player) < (range * range)) {
+                                e.setGlowing(false);
+                            }
+                        }
+                    }
+                }
+            }
+
+            // --- ERASURE INDICATOR LOGIC ---
             if (!pData.getQuirks().isEmpty()) {
                 QuirkSystem.QuirkData.QuirkInstance activeQ = pData.getQuirks().get(pData.getSelectedQuirkIndex());
                 if ("plusultra:erasure".equals(activeQ.quirkId)) {
-                    // Only if "Erase" ability (index 0) is selected AND NOT already active
                     if (pData.getSelectedAbilityIndex() == 0 && !pData.runtimeTags.containsKey("ERASURE_ACTIVE")) {
                         LivingEntity potential = ErasureQuirk.findTargetInLineOfSight(client.player, 30.0);
                         if (potential != null) {
-                            // Spawn particles at target
                             client.world.addParticle(ParticleTypes.CRIT,
                                     potential.getX(),
                                     potential.getY() + potential.getHeight() + 0.5,
@@ -70,13 +116,11 @@ public class PlusUltraClientHandlers implements ClientModInitializer {
 
             // --- AUTO-DISABLE AFO SIGHT IF QUIRK SWITCHED/LOST ---
             if (afoSightActive) {
-                QuirkSystem.QuirkData data = ((IQuirkDataAccessor)client.player).getQuirkData();
                 boolean shouldDisable = true;
-
-                if (!data.getQuirks().isEmpty()) {
-                    int index = data.getSelectedQuirkIndex();
-                    if (index >= 0 && index < data.getQuirks().size()) {
-                        QuirkSystem.QuirkData.QuirkInstance active = data.getQuirks().get(index);
+                if (!pData.getQuirks().isEmpty()) {
+                    int index = pData.getSelectedQuirkIndex();
+                    if (index >= 0 && index < pData.getQuirks().size()) {
+                        QuirkSystem.QuirkData.QuirkInstance active = pData.getQuirks().get(index);
                         if ("plusultra:all_for_one".equals(active.quirkId)) {
                             shouldDisable = false;
                         }
@@ -92,21 +136,18 @@ public class PlusUltraClientHandlers implements ClientModInitializer {
             // HANDLE HOLD/RELEASE FOR ACTIVATE KEY
             if (activateKey.isPressed()) {
                 if (!isHoldingActivate) {
-                    // Send Start Packet
                     ClientPlayNetworking.send(PlusUltraNetwork.ACTIVATE_ABILITY, PacketByteBufs.create());
                     isHoldingActivate = true;
                 }
             } else {
                 if (isHoldingActivate) {
-                    // Send Stop Packet
                     ClientPlayNetworking.send(PlusUltraNetwork.STOP_ABILITY, PacketByteBufs.create());
                     isHoldingActivate = false;
                 }
             }
 
             if (menuKey.wasPressed()) {
-                QuirkSystem.QuirkData data = ((IQuirkDataAccessor)client.player).getQuirkData();
-                if (data.getQuirks().size() >= 2) {
+                if (pData.getQuirks().size() >= 2) {
                     client.setScreen(new QuirkSelectionScreen());
                 } else {
                     client.player.sendMessage(Text.of("§cYou need at least 2 Quirks to open the Switcher!"), true);
@@ -124,14 +165,11 @@ public class PlusUltraClientHandlers implements ClientModInitializer {
 
             // AFO Sight Toggle
             if (specialKey.wasPressed()) {
-                QuirkSystem.QuirkData data = ((IQuirkDataAccessor)client.player).getQuirkData();
-
-                // Check if AFO is the *selected* quirk to allow enabling
                 boolean isAFOSelected = false;
-                if (!data.getQuirks().isEmpty()) {
-                    int index = data.getSelectedQuirkIndex();
-                    if (index >= 0 && index < data.getQuirks().size()) {
-                        if ("plusultra:all_for_one".equals(data.getQuirks().get(index).quirkId)) {
+                if (!pData.getQuirks().isEmpty()) {
+                    int index = pData.getSelectedQuirkIndex();
+                    if (index >= 0 && index < pData.getQuirks().size()) {
+                        if ("plusultra:all_for_one".equals(pData.getQuirks().get(index).quirkId)) {
                             isAFOSelected = true;
                         }
                     }
@@ -141,15 +179,10 @@ public class PlusUltraClientHandlers implements ClientModInitializer {
                     afoSightActive = !afoSightActive;
                     String status = afoSightActive ? "§aEnabled" : "§cDisabled";
                     client.player.sendMessage(Text.of("§5[All For One] §7Quirk Sight: " + status), true);
-                } else {
-                    // Optional: Feedback if they try to use special key without AFO selected
-                    // client.player.sendMessage(Text.of("§cYou must have All For One active to use this."), true);
                 }
             }
         });
     }
-
-    // Removed private getFormalName method to avoid duplication
 
     // --- STEAL SELECTION SCREEN ---
     public static class StealSelectionScreen extends Screen {
@@ -187,7 +220,6 @@ public class PlusUltraClientHandlers implements ClientModInitializer {
                     boolean isHovered = (mouseX >= startX + 10 && mouseX <= endX - 10 && mouseY >= currentY && mouseY <= currentY + 20);
                     int color = isHovered ? 0xFFFF5555 : 0xFFFFFFFF;
                     if(isHovered) context.fill(startX + 10, currentY, endX - 10, currentY + 20, 0x33FF0000);
-                    // UPDATED: Use QuirkSystem for name
                     context.drawText(textRenderer, QuirkSystem.getFormalName(qId), startX + 20, currentY + 6, color, true);
                 }
                 currentY += 25;
@@ -303,7 +335,6 @@ public class PlusUltraClientHandlers implements ClientModInitializer {
 
                     context.fill(startX + 10, currentY, endX - 10, currentY + 20, backgroundColor);
 
-                    // UPDATED: Use QuirkSystem for name (displays owner)
                     String formalName = QuirkSystem.getFormalName(qi);
                     if (qi.count > 1) formalName += " x" + qi.count;
                     if (qi.innate) formalName += " (Innate)";

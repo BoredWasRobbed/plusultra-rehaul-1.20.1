@@ -25,6 +25,7 @@ public class QuirkRegistry {
         register(new BloodcurdleQuirk());
         register(new InvisibilityQuirk());
         register(new ErasureQuirk());
+        register(new DangerSenseQuirk());
     }
 
     public static void register(QuirkSystem.Quirk quirk) {

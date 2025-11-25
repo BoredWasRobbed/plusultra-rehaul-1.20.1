@@ -70,11 +70,77 @@ public class PlusUltra implements ModInitializer {
 			}
 		});
 
+		// COPY_FROM handles data transfer on Death or Dimension Switch
 		ServerPlayerEvents.COPY_FROM.register((oldPlayer, newPlayer, alive) -> {
 			IQuirkDataAccessor oldAccessor = (IQuirkDataAccessor) oldPlayer;
 			IQuirkDataAccessor newAccessor = (IQuirkDataAccessor) newPlayer;
+
+			// Get the data reference
+			QuirkSystem.QuirkData oldData = oldAccessor.getQuirkData();
+
+			// --- HARDCORE LOGIC START ---
+			if (!alive) { // If player DIED (not dimension change)
+				PlusUltraConfig config = PlusUltraConfig.get();
+
+				// Increment death counter
+				oldData.deaths++;
+
+				if (config.hardcoreMode) {
+					// Check if lives are used up
+					if (oldData.deaths >= config.lives) {
+
+						// Reset counter (New cycle)
+						oldData.deaths = 0;
+
+						newPlayer.sendMessage(Text.of("§c§lHARDCORE RESET TRIGGERED!"), false);
+
+						// 1. Level & Stats Reset
+						if (config.levelReset) {
+							oldData.level = 1;
+							oldData.experience = 0;
+							oldData.statPoints = 1;
+							oldData.strength = 0;
+							oldData.endurance = 0;
+							oldData.speed = 0;
+							oldData.staminaMax = 0;
+							oldData.meta = 0;
+						} else {
+							// Partial resets if full level reset isn't on
+							if (config.expReset) oldData.experience = 0;
+
+							if (config.pointsReset) oldData.statPoints = 1; // Default is 1
+
+							if (config.statsReset) {
+								oldData.strength = 0;
+								oldData.endurance = 0;
+								oldData.speed = 0;
+								oldData.staminaMax = 0;
+								oldData.meta = 0;
+							}
+						}
+
+						// 2. Quirk Reset & Reroll
+						if (config.quirkReset) {
+							// Remove all quirks
+							oldData.getQuirks().clear();
+							oldData.setSelectedQuirkIndex(0);
+
+							// Reroll new quirk based on config rules
+							assignRandomQuirk(newPlayer, oldData);
+						}
+						// 3. Awakening Reset (Only if quirks weren't wiped entirely)
+						else if (config.awakeningReset) {
+							for (QuirkSystem.QuirkData.QuirkInstance qi : oldData.getQuirks()) {
+								qi.awakened = false;
+							}
+						}
+					}
+				}
+			}
+			// --- HARDCORE LOGIC END ---
+
 			NbtCompound nbt = new NbtCompound();
-			oldAccessor.getQuirkData().writeToNbt(nbt);
+			oldData.writeToNbt(nbt);
 			newAccessor.getQuirkData().readFromNbt(nbt);
 		});
 
