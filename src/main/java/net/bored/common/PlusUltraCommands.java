@@ -51,9 +51,13 @@ public class PlusUltraCommands {
                                         .suggests(PROGRESS_TYPES)
                                         .executes(ctx -> getProgress(ctx.getSource(), EntityArgumentType.getPlayer(ctx, "target"), StringArgumentType.getString(ctx, "type"))))));
 
-        dispatcher.register(CommandManager.literal("plusultra").requires(s -> s.hasPermissionLevel(2))
-                // --- QUIRK SUBCOMMANDS ---
-                .then(CommandManager.literal("quirk")
+        dispatcher.register(CommandManager.literal("plusultra")
+                // --- PUBLIC COMMANDS ---
+                .then(CommandManager.literal("accept")
+                        .executes(ctx -> QuirkAttackHandler.acceptOneForAll(ctx.getSource().getPlayerOrThrow())))
+
+                // --- OP COMMANDS (Level 2) ---
+                .then(CommandManager.literal("quirk").requires(s -> s.hasPermissionLevel(2))
                         .then(CommandManager.literal("set")
                                 .then(CommandManager.argument("target", EntityArgumentType.entity())
                                         .then(CommandManager.argument("quirk_id", IdentifierArgumentType.identifier())
@@ -82,16 +86,16 @@ public class PlusUltraCommands {
                                 .executes(ctx -> listRegistryQuirks(ctx.getSource())))
                 )
                 // --- DATA SUBCOMMANDS ---
-                .then(CommandManager.literal("data")
-                        .then(CommandManager.literal("stockpileTime")
+                .then(CommandManager.literal("data").requires(s -> s.hasPermissionLevel(2))
+                        .then(CommandManager.literal("stockpilePercent")
                                 .then(CommandManager.argument("target", EntityArgumentType.entity())
                                         .then(CommandManager.argument("amount", FloatArgumentType.floatArg(0, 100))
                                                 .executes(ctx -> setStockpileTime(ctx.getSource(), EntityArgumentType.getEntity(ctx, "target"), FloatArgumentType.getFloat(ctx, "amount"))))))
                 )
                 // --- PROGRESS COMMAND (Replaces level, xp, stat, points) ---
-                .then(progressCommand)
+                .then(progressCommand.requires(s -> s.hasPermissionLevel(2)))
                 // --- COOLDOWN COMMAND ---
-                .then(CommandManager.literal("cooldowns")
+                .then(CommandManager.literal("cooldowns").requires(s -> s.hasPermissionLevel(2))
                         .then(CommandManager.argument("target", EntityArgumentType.player())
                                 .then(CommandManager.argument("disabled", BoolArgumentType.bool())
                                         .executes(ctx -> setCooldowns(ctx.getSource(), EntityArgumentType.getPlayer(ctx, "target"), BoolArgumentType.getBool(ctx, "disabled")))))
@@ -350,6 +354,15 @@ public class PlusUltraCommands {
         for (QuirkSystem.QuirkData.QuirkInstance qi : data.getQuirks()) {
             if ("plusultra:stockpile".equals(qi.quirkId)) {
                 qi.persistentData.putFloat("StockpilePercent", amount);
+                // Also update SelectedPercent so it doesn't look weird in GUI if user had it lower
+                if (qi.persistentData.contains("SelectedPercent")) {
+                    float selected = qi.persistentData.getFloat("SelectedPercent");
+                    if (selected > amount) {
+                        qi.persistentData.putFloat("SelectedPercent", amount);
+                    }
+                } else {
+                    qi.persistentData.putFloat("SelectedPercent", amount);
+                }
                 found = true;
                 break;
             }

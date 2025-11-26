@@ -91,6 +91,58 @@ public class CellActivationQuirk extends QuirkSystem.Quirk {
                 this.triggerCooldown(instance);
             }
         });
+
+        this.addAbility(new QuirkSystem.Ability("Prolonged Activation", QuirkSystem.AbilityType.HOLD, 40, 10, 1.0) {
+            @Override
+            public void onHoldTick(LivingEntity entity, QuirkSystem.QuirkData data, QuirkSystem.QuirkData.QuirkInstance instance) {
+                if (!instance.persistentData.contains("BlockedBlood")) {
+                    String randomType = BLOOD_TYPES.get(new Random().nextInt(BLOOD_TYPES.size()));
+                    instance.persistentData.putString("BlockedBlood", randomType);
+                }
+                String blockedType = instance.persistentData.getString("BlockedBlood");
+
+                if (entity.age % 5 != 0) return; // Tick every 5 ticks
+
+                LivingEntity target = ErasureQuirk.findTargetInLineOfSight(entity, 4.0);
+                if (target == null || !(target instanceof IQuirkDataAccessor)) return;
+
+                QuirkSystem.QuirkData targetData = ((IQuirkDataAccessor)target).getQuirkData();
+                String targetBlood = targetData.bloodType;
+
+                if (targetBlood != null && targetBlood.equals(blockedType)) {
+                    if (entity instanceof PlayerEntity p && entity.age % 20 == 0) {
+                        p.sendMessage(Text.of("§cIncompatible Blood Type!"), true);
+                    }
+                    return;
+                }
+
+                if (data.currentStamina < 1.0) {
+                    if (entity instanceof PlayerEntity p) p.sendMessage(Text.of("§cOut of Stamina!"), true);
+                    return;
+                }
+
+                data.currentStamina -= 1.0;
+                float healAmount = 0.5f + (data.meta * 0.1f);
+                target.heal(healAmount); // Added healing logic
+
+                if (entity.getWorld() instanceof ServerWorld sw) {
+                    sw.spawnParticles(ParticleTypes.ELECTRIC_SPARK, target.getX(), target.getY() + 1, target.getZ(), 2, 0.3, 0.5, 0.3, 0.05);
+                }
+            }
+
+            @Override
+            public void onActivate(LivingEntity entity, QuirkSystem.QuirkData data, QuirkSystem.QuirkData.QuirkInstance instance) {
+                entity.swingHand(Hand.MAIN_HAND, true);
+                data.runtimeTags.put("CELL_PROLONGED", "true");
+                if (entity instanceof PlayerEntity p) p.sendMessage(Text.of("§aHolding Activation..."), true);
+            }
+
+            @Override
+            public void onRelease(LivingEntity entity, QuirkSystem.QuirkData data, QuirkSystem.QuirkData.QuirkInstance instance) {
+                data.runtimeTags.remove("CELL_PROLONGED");
+                this.triggerCooldown(instance);
+            }
+        });
     }
 
     @Override

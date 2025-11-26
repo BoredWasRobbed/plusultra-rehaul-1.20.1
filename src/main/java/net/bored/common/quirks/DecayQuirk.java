@@ -1,5 +1,6 @@
 package net.bored.common.quirks;
 
+import net.bored.api.IQuirkDataAccessor;
 import net.bored.api.QuirkSystem;
 import net.bored.common.PlusUltraNetwork;
 import net.bored.config.PlusUltraConfig;
@@ -59,6 +60,17 @@ public class DecayQuirk extends QuirkSystem.Quirk {
             public void onRelease(LivingEntity entity, QuirkSystem.QuirkData data, QuirkSystem.QuirkData.QuirkInstance instance) {
                 if (data.runtimeTags.containsKey("DECAY_GRIP_ACTIVE")) {
                     data.runtimeTags.remove("DECAY_GRIP_ACTIVE");
+                    // Release target if grabbed
+                    if (data.runtimeTags.containsKey("DECAY_GRIPPED_TARGET")) {
+                        int targetId = Integer.parseInt(data.runtimeTags.get("DECAY_GRIPPED_TARGET"));
+                        Entity target = entity.getWorld().getEntityById(targetId);
+                        if (target instanceof LivingEntity living) {
+                            QuirkSystem.QuirkData targetData = ((IQuirkDataAccessor)living).getQuirkData();
+                            targetData.runtimeTags.remove("GRIPPED_BY_DECAY");
+                            if (target instanceof PlayerEntity tp) tp.sendMessage(Text.of("§aYou broke free!"), true);
+                        }
+                        data.runtimeTags.remove("DECAY_GRIPPED_TARGET");
+                    }
                     this.triggerCooldown(instance);
                 }
             }
@@ -222,42 +234,79 @@ public class DecayQuirk extends QuirkSystem.Quirk {
         if (data.runtimeTags.containsKey("DESTRUCTION_DISABLED")) canDestroy = false;
         if (!world.getGameRules().getBoolean(GameRules.DO_MOB_GRIEFING) && !(entity instanceof PlayerEntity)) canDestroy = false;
 
-        // --- Ability 1: Decay Grip ---
+        // --- Ability 1: Decay Grip (Updated) ---
         if (data.runtimeTags.containsKey("DECAY_GRIP_ACTIVE")) {
             if (data.currentStamina < 2.0) {
-                data.runtimeTags.remove("DECAY_GRIP_ACTIVE");
-                this.getAbilities().get(0).triggerCooldown(instance);
+                // Force release
+                this.getAbilities().get(0).onRelease(entity, data, instance);
                 if (entity instanceof PlayerEntity p) p.sendMessage(Text.of("§cOut of Stamina!"), true);
             } else {
                 data.currentStamina -= 2.0;
-                double range = 4.0;
-                Vec3d start = entity.getCameraPosVec(1.0f);
-                Vec3d direction = entity.getRotationVector();
-                Vec3d end = start.add(direction.multiply(range));
-                Box box = entity.getBoundingBox().stretch(direction.multiply(range)).expand(1.0);
-                Entity target = null;
-                double closestDist = range * range;
-                for (Entity e : entity.getWorld().getOtherEntities(entity, box)) {
-                    if (e instanceof LivingEntity) {
-                        float border = e.getTargetingMargin() + 0.5f;
-                        Box hitBox = e.getBoundingBox().expand(border);
-                        if (hitBox.raycast(start, end).isPresent()) {
-                            double d = start.squaredDistanceTo(e.getPos());
-                            if (d < closestDist) {
-                                target = e;
-                                closestDist = d;
+
+                // If we already have a target, maintain grip
+                if (data.runtimeTags.containsKey("DECAY_GRIPPED_TARGET")) {
+                    int targetId = Integer.parseInt(data.runtimeTags.get("DECAY_GRIPPED_TARGET"));
+                    Entity target = world.getEntityById(targetId);
+
+                    if (target instanceof LivingEntity livingTarget && livingTarget.isAlive()) {
+                        // Distance check
+                        if (entity.squaredDistanceTo(target) > 9.0) {
+                            // Break grip
+                            this.getAbilities().get(0).onRelease(entity, data, instance);
+                            if (entity instanceof PlayerEntity p) p.sendMessage(Text.of("§cTarget too far!"), true);
+                            return;
+                        }
+
+                        // Apply Grip Effects
+                        livingTarget.teleport(entity.getX(), entity.getY(), entity.getZ()); // Lock position
+                        livingTarget.setVelocity(0, 0, 0);
+                        livingTarget.velocityModified = true;
+
+                        float multiplier = getPowerMultiplier(instance.count, data);
+                        float dmg = 1.0f * multiplier;
+                        livingTarget.damage(entity.getDamageSources().magic(), dmg);
+                        livingTarget.addStatusEffect(new StatusEffectInstance(StatusEffects.WITHER, 40, 1, false, false));
+
+                        // Struggle Check (Sneak or Jump)
+                        QuirkSystem.QuirkData targetData = ((IQuirkDataAccessor)livingTarget).getQuirkData();
+                        targetData.runtimeTags.put("GRIPPED_BY_DECAY", "true"); // Flag for client HUD if needed
+
+                        // Removed check for 'jumping' as it is protected access. Using 'isSneaking' as the struggle mechanic.
+                        if (livingTarget.isSneaking()) {
+                            int struggle = Integer.parseInt(data.runtimeTags.getOrDefault("DECAY_GRIP_STRUGGLE", "0"));
+                            struggle++;
+                            if (struggle > 20) { // ~1 second of struggling
+                                this.getAbilities().get(0).onRelease(entity, data, instance);
+                                data.runtimeTags.remove("DECAY_GRIP_STRUGGLE");
+                                return;
+                            }
+                            data.runtimeTags.put("DECAY_GRIP_STRUGGLE", String.valueOf(struggle));
+                        }
+
+                        serverWorld.spawnParticles(ParticleTypes.ASH, livingTarget.getX(), livingTarget.getY() + 1, livingTarget.getZ(), 5, 0.2, 0.5, 0.2, 0.05);
+                    } else {
+                        // Target lost/dead
+                        data.runtimeTags.remove("DECAY_GRIPPED_TARGET");
+                    }
+                } else {
+                    // Try to grab
+                    double range = 3.0;
+                    Vec3d start = entity.getCameraPosVec(1.0f);
+                    Vec3d direction = entity.getRotationVector();
+                    Vec3d end = start.add(direction.multiply(range));
+                    Box box = entity.getBoundingBox().stretch(direction.multiply(range)).expand(1.0);
+
+                    for (Entity e : entity.getWorld().getOtherEntities(entity, box)) {
+                        if (e instanceof LivingEntity living) {
+                            if (e.getBoundingBox().expand(0.5).raycast(start, end).isPresent()) {
+                                data.runtimeTags.put("DECAY_GRIPPED_TARGET", String.valueOf(e.getId()));
+                                if (entity instanceof PlayerEntity p) p.sendMessage(Text.of("§5Gripped target!"), true);
+                                if (e instanceof PlayerEntity p) p.sendMessage(Text.of("§cYou are gripped by Decay! Crouch to struggle!"), true);
+                                break;
                             }
                         }
                     }
                 }
-                if (target instanceof LivingEntity livingTarget) {
-                    float multiplier = getPowerMultiplier(instance.count, data);
-                    float dmg = 1.5f * multiplier;
-                    livingTarget.damage(entity.getDamageSources().magic(), dmg);
-                    livingTarget.addStatusEffect(new StatusEffectInstance(StatusEffects.WITHER, 40, 0, false, false));
-                    serverWorld.spawnParticles(ParticleTypes.ASH, livingTarget.getX(), livingTarget.getY() + 1, livingTarget.getZ(), 5, 0.2, 0.5, 0.2, 0.05);
-                }
-                serverWorld.spawnParticles(ParticleTypes.SMOKE, start.x + direction.x, start.y + direction.y, start.z + direction.z, 2, 0, 0, 0, 0);
             }
             if (entity instanceof ServerPlayerEntity sp) PlusUltraNetwork.sync(sp);
         }
@@ -292,49 +341,45 @@ public class DecayQuirk extends QuirkSystem.Quirk {
                 if (currentRim.isEmpty()) {
                     data.runtimeTags.remove("DECAY_ROT_ACTIVE");
                 } else {
-                    boolean changesMade = false;
                     for (Long posLong : currentRim) {
                         BlockPos pos = BlockPos.fromLong(posLong);
+
+                        // Damage Entities on the rim blocks (Updated: Give decay to touched entities)
+                        Box box = new Box(pos).expand(0.5);
+                        world.getEntitiesByClass(LivingEntity.class, box, e -> e != entity).forEach(e -> {
+                            e.damage(entity.getDamageSources().magic(), 4.0f);
+                            e.addStatusEffect(new StatusEffectInstance(StatusEffects.WITHER, 60, 1)); // Apply Decay
+                        });
 
                         for (int dx = -1; dx <= 1; dx++) {
                             for (int dz = -1; dz <= 1; dz++) {
                                 if (dx == 0 && dz == 0) continue;
 
-                                for (int dy = -1; dy <= 1; dy++) {
+                                // Increased vertical search range for trees/structures
+                                for (int dy = -1; dy <= 3; dy++) {
                                     BlockPos neighbor = pos.add(dx, dy, dz);
                                     long nLong = neighbor.asLong();
 
                                     if (visited.contains(nLong)) continue;
                                     if (Math.sqrt(neighbor.getSquaredDistance(centerPos)) > currentR) continue;
-                                    if (neighbor.equals(centerPos) || neighbor.equals(centerPos.down())) {
-                                        visited.add(nLong);
-                                        nextRim.add(nLong);
-                                        continue;
-                                    }
+
+                                    // Skip if too far below start
+                                    if (neighbor.getY() < centerY - 5) continue;
+
+                                    boolean validTarget = false;
 
                                     if ("OBJECT".equals(mode)) {
                                         BlockState neighborState = serverWorld.getBlockState(neighbor);
                                         String nId = Registries.BLOCK.getId(neighborState.getBlock()).toString();
-
-                                        if (!nId.equals(targetBlockId)) continue;
-
-                                        visited.add(nLong);
-                                        nextRim.add(nLong);
-                                        changesMade = true;
-
-                                        if (serverWorld.random.nextFloat() < 0.3f) {
-                                            serverWorld.spawnParticles(ParticleTypes.ASH, neighbor.getX()+0.5, neighbor.getY()+0.5, neighbor.getZ()+0.5, 1, 0.1, 0.1, 0.1, 0);
-                                        }
-                                        if (canDestroy) {
-                                            serverWorld.breakBlock(neighbor, false);
-                                        }
+                                        if (nId.equals(targetBlockId)) validTarget = true;
                                     } else {
-                                        if (neighbor.getY() < centerY - 5) continue;
-                                        if (serverWorld.isAir(neighbor)) continue;
+                                        // Normal mode: Spread to any solid block (not air)
+                                        if (!serverWorld.isAir(neighbor)) validTarget = true;
+                                    }
 
+                                    if (validTarget) {
                                         visited.add(nLong);
                                         nextRim.add(nLong);
-                                        changesMade = true;
 
                                         if (serverWorld.random.nextFloat() < 0.3f) {
                                             serverWorld.spawnParticles(ParticleTypes.ASH, neighbor.getX()+0.5, neighbor.getY()+0.5, neighbor.getZ()+0.5, 1, 0.1, 0.1, 0.1, 0);
@@ -343,12 +388,6 @@ public class DecayQuirk extends QuirkSystem.Quirk {
                                             serverWorld.breakBlock(neighbor, false);
                                         }
                                     }
-
-                                    Box box = new Box(neighbor);
-                                    world.getEntitiesByClass(LivingEntity.class, box, e -> e != entity).forEach(e -> {
-                                        e.damage(entity.getDamageSources().magic(), 4.0f);
-                                        e.addStatusEffect(new StatusEffectInstance(StatusEffects.WITHER, 40, 1));
-                                    });
                                 }
                             }
                         }

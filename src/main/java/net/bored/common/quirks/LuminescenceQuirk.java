@@ -53,7 +53,7 @@ public class LuminescenceQuirk extends QuirkSystem.Quirk {
                 }
             }
 
-            // 2. Place new light block if space is empty
+            // 2. Place new light block if space is empty or replaceable (grass/water)
             if (canPlaceLight(world, currentPos)) {
                 world.setBlockState(currentPos, Blocks.LIGHT.getDefaultState().with(LightBlock.LEVEL_15, 15));
 
@@ -89,7 +89,9 @@ public class LuminescenceQuirk extends QuirkSystem.Quirk {
 
     private boolean canPlaceLight(ServerWorld world, BlockPos pos) {
         BlockState state = world.getBlockState(pos);
-        return state.isAir() || (state.isOf(Blocks.LIGHT) && state.get(LightBlock.LEVEL_15) < 15);
+        // Allow replacing air OR blocks like grass, water, etc. (replaceable)
+        // Also allow updating our own light block if the level is wrong
+        return state.isAir() || state.isReplaceable() || (state.isOf(Blocks.LIGHT) && state.get(LightBlock.LEVEL_15) < 15);
     }
 
     @Override

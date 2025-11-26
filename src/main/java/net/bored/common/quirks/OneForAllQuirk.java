@@ -30,6 +30,13 @@ public class OneForAllQuirk extends QuirkSystem.Quirk {
         this.addAbility(new QuirkSystem.Ability("Bestow (Transfer)", QuirkSystem.AbilityType.INSTANT, 1200, 1, 100.0) {
             @Override
             public void onActivate(LivingEntity entity, QuirkSystem.QuirkData data, QuirkSystem.QuirkData.QuirkInstance instance) {
+                // Cancel if already active
+                if (data.runtimeTags.containsKey("OFA_MODE") && "TRANSFER".equals(data.runtimeTags.get("OFA_MODE"))) {
+                    data.runtimeTags.remove("OFA_MODE");
+                    if(entity instanceof PlayerEntity p) p.sendMessage(Text.of("§7Transfer mode cancelled."), true);
+                    return;
+                }
+
                 data.runtimeTags.put("OFA_MODE", "TRANSFER");
                 data.currentStamina -= this.getCost();
                 if(entity instanceof PlayerEntity p) {

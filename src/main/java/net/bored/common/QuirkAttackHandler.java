@@ -22,6 +22,7 @@ import net.minecraft.util.Identifier;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
 
 public class QuirkAttackHandler {
 
@@ -54,7 +55,8 @@ public class QuirkAttackHandler {
                 attackerData.runtimeTags.remove("OFA_MODE");
 
                 if ("TRANSFER".equals(mode)) {
-                    handleOFATransfer(player, attackerData, target, ((IQuirkDataAccessor) target).getQuirkData());
+                    // Instead of immediate transfer, we offer it
+                    handleOFAOffer(player, target);
                 }
                 return ActionResult.SUCCESS;
             }
@@ -107,6 +109,8 @@ public class QuirkAttackHandler {
 
                     data.runtimeTags.put("BLOOD_STOLEN_FROM", target.getUuid().toString());
                     data.runtimeTags.put("BLOOD_STOLEN_TYPE", bloodType);
+                    // Set dry timer to 60 seconds (1200 ticks)
+                    data.runtimeTags.put("BLOOD_DRY_TIMER", "1200");
 
                     if (attacker instanceof PlayerEntity p) {
                         // Obscured feedback
@@ -128,8 +132,9 @@ public class QuirkAttackHandler {
 
         QuirkSystem.QuirkData.QuirkInstance targetQuirk = null;
         for(QuirkSystem.QuirkData.QuirkInstance q : targetData.getQuirks()) {
-            // Can't copy "Empty" or "Copy" itself to avoid recursion issues
+            // Can't copy "Empty", "Copy", or "Quirkless"
             if (q.quirkId.equals("plusultra:copy")) continue;
+            if (q.quirkId.equals("plusultra:quirkless")) continue;
             targetQuirk = q;
             break; // Grab first valid
         }
@@ -189,10 +194,40 @@ public class QuirkAttackHandler {
         }
     }
 
-    private static void handleOFATransfer(PlayerEntity attacker, QuirkSystem.QuirkData attackerData, LivingEntity target, QuirkSystem.QuirkData targetData) {
+    private static void handleOFAOffer(PlayerEntity attacker, LivingEntity target) {
+        QuirkSystem.QuirkData targetData = ((IQuirkDataAccessor) target).getQuirkData();
+        // Tag target with the sender's UUID
+        targetData.runtimeTags.put("OFA_OFFER_SENDER", attacker.getUuidAsString());
+
+        if (target instanceof PlayerEntity tp) {
+            tp.sendMessage(Text.of("§e§lONE FOR ALL OFFERED!"), false);
+            tp.sendMessage(Text.of("§e" + attacker.getName().getString() + " wishes to transfer One For All to you."), false);
+            tp.sendMessage(Text.of("§eType §6/plusultra accept §eto receive this power."), false);
+        }
+        attacker.sendMessage(Text.of("§eOne For All offered to " + target.getName().getString() + "."), true);
+    }
+
+    public static int acceptOneForAll(ServerPlayerEntity target) {
+        QuirkSystem.QuirkData targetData = ((IQuirkDataAccessor) target).getQuirkData();
+        if (!targetData.runtimeTags.containsKey("OFA_OFFER_SENDER")) {
+            target.sendMessage(Text.of("§cYou have no pending offers."), true);
+            return 0;
+        }
+
+        String senderUUIDStr = targetData.runtimeTags.get("OFA_OFFER_SENDER");
+        targetData.runtimeTags.remove("OFA_OFFER_SENDER");
+
+        ServerPlayerEntity sender = target.getServer().getPlayerManager().getPlayer(UUID.fromString(senderUUIDStr));
+        if (sender == null) {
+            target.sendMessage(Text.of("§cThe sender is no longer online."), true);
+            return 0;
+        }
+
+        // Verify sender still has OFA
+        QuirkSystem.QuirkData senderData = ((IQuirkDataAccessor) sender).getQuirkData();
         QuirkSystem.QuirkData.QuirkInstance activeOFA = null;
 
-        for (QuirkSystem.QuirkData.QuirkInstance qi : attackerData.getQuirks()) {
+        for (QuirkSystem.QuirkData.QuirkInstance qi : senderData.getQuirks()) {
             if ("plusultra:one_for_all".equals(qi.quirkId) || "plusultra:quirk_bestowal".equals(qi.quirkId)) {
                 activeOFA = qi;
                 break;
@@ -200,15 +235,17 @@ public class QuirkAttackHandler {
         }
 
         if (activeOFA == null) {
-            attacker.sendMessage(Text.of("§cTransfer failed: You lost the quirk?"), true);
-            return;
+            target.sendMessage(Text.of("§cThe sender no longer possesses the quirk."), true);
+            sender.sendMessage(Text.of("§cTransfer failed: Quirk lost."), true);
+            return 0;
         }
 
+        // PERFORM TRANSFER LOGIC
         int currentGen = activeOFA.persistentData.getInt("Generation");
-
         if (currentGen >= 9) {
-            attacker.sendMessage(Text.of("§6The power has reached its peak. One For All cannot be transferred further."), true);
-            return;
+            sender.sendMessage(Text.of("§6The power has reached its peak. One For All cannot be transferred further."), true);
+            target.sendMessage(Text.of("§6The power is too great to be accepted."), true);
+            return 0;
         }
 
         String firstUserQuirkId = activeOFA.persistentData.getString("FirstQuirk");
@@ -220,21 +257,21 @@ public class QuirkAttackHandler {
                 QuirkSystem.QuirkData.QuirkInstance targetExisting = targetData.getQuirks().get(0);
                 firstUserQuirkId = targetExisting.quirkId;
                 targetData.getQuirks().clear();
-                attacker.sendMessage(Text.of("§eFusing Bestowal with " + QuirkSystem.getFormalName(firstUserQuirkId) + "..."), false);
+                sender.sendMessage(Text.of("§eFusing Bestowal with " + QuirkSystem.getFormalName(firstUserQuirkId) + "..."), false);
             } else {
                 firstUserQuirkId = "";
             }
         }
 
         List<QuirkSystem.QuirkData.QuirkInstance> quirksToMove = new ArrayList<>();
-        for(QuirkSystem.QuirkData.QuirkInstance qi : attackerData.getQuirks()) {
+        for(QuirkSystem.QuirkData.QuirkInstance qi : senderData.getQuirks()) {
             if (!qi.quirkId.equals(activeOFA.quirkId)) {
                 quirksToMove.add(qi);
             }
         }
 
-        attackerData.getQuirks().clear();
-        attackerData.setSelectedQuirkIndex(0);
+        senderData.getQuirks().clear();
+        senderData.setSelectedQuirkIndex(0);
 
         QuirkSystem.QuirkData.QuirkInstance newOFA = new QuirkSystem.QuirkData.QuirkInstance("plusultra:one_for_all");
         newOFA.persistentData.putInt("Generation", newGen);
@@ -256,15 +293,15 @@ public class QuirkAttackHandler {
             targetData.getQuirks().add(clone);
         }
 
-        attacker.sendMessage(Text.of("§eYou have passed on the torch."), true);
-        if (target instanceof PlayerEntity tp) {
-            String mergedName = (firstUserQuirkId != null && !firstUserQuirkId.isEmpty()) ? QuirkSystem.getFormalName(firstUserQuirkId) : "Power";
-            tp.sendMessage(Text.of("§bYou have received One For All! (Gen " + newGen + ")"), false);
-            if (newGen == 1) tp.sendMessage(Text.of("§7Bestowal has merged with " + mergedName + "."), false);
-        }
+        sender.sendMessage(Text.of("§eYou have passed on the torch."), true);
 
-        PlusUltraNetwork.sync(attacker);
+        String mergedName = (firstUserQuirkId != null && !firstUserQuirkId.isEmpty()) ? QuirkSystem.getFormalName(firstUserQuirkId) : "Power";
+        target.sendMessage(Text.of("§bYou have accepted One For All! (Gen " + newGen + ")"), false);
+        if (newGen == 1) target.sendMessage(Text.of("§7Bestowal has merged with " + mergedName + "."), false);
+
+        PlusUltraNetwork.sync(sender);
         PlusUltraNetwork.sync(target);
+        return 1;
     }
 
     private static void handleSteal(PlayerEntity attacker, QuirkSystem.QuirkData attackerData, LivingEntity target, QuirkSystem.QuirkData targetData) {

@@ -24,6 +24,13 @@ public class AllForOneQuirk extends QuirkSystem.Quirk {
         this.addAbility(new QuirkSystem.Ability("Forced Transfer (Steal)", QuirkSystem.AbilityType.INSTANT, 100, 1, 20.0) {
             @Override
             public void onActivate(LivingEntity entity, QuirkSystem.QuirkData data, QuirkSystem.QuirkData.QuirkInstance instance) {
+                // Cancel if already active
+                if (data.runtimeTags.containsKey("AFO_MODE") && "STEAL".equals(data.runtimeTags.get("AFO_MODE"))) {
+                    data.runtimeTags.remove("AFO_MODE");
+                    if(entity instanceof PlayerEntity p) p.sendMessage(Text.of("§7Steal mode cancelled."), true);
+                    return;
+                }
+
                 data.runtimeTags.put("AFO_MODE", "STEAL");
                 data.currentStamina -= this.getCost();
                 if(entity instanceof PlayerEntity p) p.sendMessage(Text.of("§cNext hit will STEAL a quirk."), true);
@@ -34,6 +41,13 @@ public class AllForOneQuirk extends QuirkSystem.Quirk {
         this.addAbility(new QuirkSystem.Ability("Bestowal (Give)", QuirkSystem.AbilityType.INSTANT, 100, 1, 20.0) {
             @Override
             public void onActivate(LivingEntity entity, QuirkSystem.QuirkData data, QuirkSystem.QuirkData.QuirkInstance instance) {
+                // Cancel if already active
+                if (data.runtimeTags.containsKey("AFO_MODE") && "GIVE".equals(data.runtimeTags.get("AFO_MODE"))) {
+                    data.runtimeTags.remove("AFO_MODE");
+                    if(entity instanceof PlayerEntity p) p.sendMessage(Text.of("§7Bestowal mode cancelled."), true);
+                    return;
+                }
+
                 data.runtimeTags.put("AFO_MODE", "GIVE");
                 data.currentStamina -= this.getCost();
                 if(entity instanceof PlayerEntity p) p.sendMessage(Text.of("§eNext hit will GIVE your selected quirk."), true);

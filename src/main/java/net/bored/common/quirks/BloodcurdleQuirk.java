@@ -6,6 +6,9 @@ import net.bored.common.PlusUltraNetwork;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.LivingEntity;
 import net.minecraft.entity.player.PlayerEntity;
+import net.minecraft.item.AxeItem;
+import net.minecraft.item.ItemStack;
+import net.minecraft.item.SwordItem;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.server.world.ServerWorld;
 import net.minecraft.text.Text;
@@ -39,6 +42,21 @@ public class BloodcurdleQuirk extends QuirkSystem.Quirk {
                     return;
                 }
 
+                // 1. Weapon Check: Must hold a sharp weapon (Simulating holding the bloodied blade)
+                ItemStack stack = entity.getMainHandStack();
+                boolean isSharp = stack.getItem() instanceof SwordItem ||
+                        stack.getItem() instanceof AxeItem ||
+                        stack.getItem().getTranslationKey().contains("scythe") ||
+                        stack.getItem().getTranslationKey().contains("knife") ||
+                        stack.getItem().getTranslationKey().contains("dagger");
+
+                if (!isSharp) {
+                    if (entity instanceof PlayerEntity p) {
+                        p.sendMessage(Text.of("§cYou must hold the bloodied weapon to activate!"), true);
+                    }
+                    return;
+                }
+
                 String targetUUIDStr = data.runtimeTags.get("BLOOD_STOLEN_FROM");
                 String bloodType = data.runtimeTags.getOrDefault("BLOOD_STOLEN_TYPE", "O+");
 
@@ -54,8 +72,24 @@ public class BloodcurdleQuirk extends QuirkSystem.Quirk {
                     }
                 }
 
+                // Range limit check: 150 blocks (squared is 22500)
+                if (target != null && entity.squaredDistanceTo(target) > 22500.0) {
+                    if (entity instanceof PlayerEntity p) {
+                        p.sendMessage(Text.of("§cTarget is too far away! (Max 150m)"), true);
+                    }
+                    return;
+                }
+
                 if (target != null) {
                     QuirkSystem.QuirkData targetData = ((IQuirkDataAccessor) target).getQuirkData();
+
+                    // 2. Re-Paralyze Check
+                    if (targetData.runtimeTags.containsKey("BLOODCURDLE_ACTIVE")) {
+                        if (entity instanceof PlayerEntity p) {
+                            p.sendMessage(Text.of("§cTarget is already paralyzed!"), true);
+                        }
+                        return;
+                    }
 
                     int ticks = calculateParalysisTicks(bloodType);
                     targetData.runtimeTags.put("BLOODCURDLE_ACTIVE", "true");
@@ -82,6 +116,7 @@ public class BloodcurdleQuirk extends QuirkSystem.Quirk {
                 // Consume blood
                 data.runtimeTags.remove("BLOOD_STOLEN_FROM");
                 data.runtimeTags.remove("BLOOD_STOLEN_TYPE");
+                data.runtimeTags.remove("BLOOD_DRY_TIMER");
                 data.currentStamina -= this.getCost();
                 this.triggerCooldown(instance);
             }

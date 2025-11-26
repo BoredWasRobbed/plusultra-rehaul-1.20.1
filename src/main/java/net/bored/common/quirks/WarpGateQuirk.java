@@ -143,14 +143,23 @@ public class WarpGateQuirk extends QuirkSystem.Quirk {
             public void onHoldTick(LivingEntity entity, QuirkSystem.QuirkData data, QuirkSystem.QuirkData.QuirkInstance instance) {
                 if (!data.runtimeTags.containsKey("WARP_MIST_ACTIVE")) return;
 
-                if (entity.getWorld().isClient) {
+                // Client-sided indicator logic
+                if (entity.getWorld().isClient && entity instanceof PlayerEntity player && player.isMainPlayer()) {
                     float metaMult = getPowerMultiplier(instance.count, data);
                     double range = 20.0 + (metaMult * 5.0);
                     HitResult hit = entity.raycast(range, 0, false);
-                    if (hit.getType() != HitResult.Type.MISS) {
-                        entity.getWorld().addParticle(ParticleTypes.PORTAL, hit.getPos().x, hit.getPos().y, hit.getPos().z, 0, 0.5, 0);
-                        entity.getWorld().addParticle(ParticleTypes.SQUID_INK, hit.getPos().x, hit.getPos().y + 1, hit.getPos().z, 0, 0.05, 0);
+
+                    Vec3d dest;
+                    if (hit.getType() == HitResult.Type.BLOCK) {
+                        BlockHitResult bHit = (BlockHitResult)hit;
+                        dest = Vec3d.ofBottomCenter(bHit.getBlockPos().offset(bHit.getSide()));
+                    } else {
+                        dest = hit.getPos();
                     }
+
+                    // Indicator Particles at destination
+                    entity.getWorld().addParticle(ParticleTypes.PORTAL, dest.x, dest.y + 0.5, dest.z, 0, 0, 0);
+                    entity.getWorld().addParticle(ParticleTypes.SQUID_INK, dest.x, dest.y + 1.0, dest.z, 0, 0.05, 0);
                 }
             }
 
@@ -228,52 +237,6 @@ public class WarpGateQuirk extends QuirkSystem.Quirk {
                 this.triggerCooldown(instance);
             }
         });
-
-        // Ability 4: Mist Body
-        this.addAbility(new QuirkSystem.Ability("Mist Body", QuirkSystem.AbilityType.TOGGLE, 100, 30, 25.0) {
-            @Override
-            public void onActivate(LivingEntity entity, QuirkSystem.QuirkData data, QuirkSystem.QuirkData.QuirkInstance instance) {
-                boolean isActive = data.runtimeTags.containsKey("WARP_MIST_BODY");
-
-                if (!isActive) {
-                    // Activate
-                    data.runtimeTags.put("WARP_MIST_BODY", "true");
-                    data.runtimeTags.put("WARP_START_X", String.valueOf(entity.getX()));
-                    data.runtimeTags.put("WARP_START_Y", String.valueOf(entity.getY()));
-                    data.runtimeTags.put("WARP_START_Z", String.valueOf(entity.getZ()));
-
-                    if (entity instanceof PlayerEntity p) {
-                        p.sendMessage(Text.of("§5Mist Body Active"), true);
-                        p.getAbilities().allowFlying = true;
-                        p.getAbilities().flying = true;
-                        p.sendAbilitiesUpdate();
-                        p.setInvisible(true);
-                        entity.getWorld().playSound(null, entity.getX(), entity.getY(), entity.getZ(), SoundEvents.ENTITY_WITHER_SPAWN, SoundCategory.PLAYERS, 0.5f, 2.0f);
-                    }
-                } else {
-                    // Deactivate & Set Temporary Portals
-                    data.runtimeTags.remove("WARP_MIST_BODY");
-
-                    data.runtimeTags.put("WARP_TEMP_PORTAL_ACTIVE", "true");
-                    data.runtimeTags.put("WARP_TEMP_PORTAL_TIMER", "200"); // 10 seconds
-                    data.runtimeTags.put("WARP_TEMP_END_X", String.valueOf(entity.getX()));
-                    data.runtimeTags.put("WARP_TEMP_END_Y", String.valueOf(entity.getY()));
-                    data.runtimeTags.put("WARP_TEMP_END_Z", String.valueOf(entity.getZ()));
-                    // Start coords are already in WARP_START_X/Y/Z
-
-                    if (entity instanceof PlayerEntity p) {
-                        p.sendMessage(Text.of("§5Portals Created"), true);
-                        if (!p.isCreative() && !p.isSpectator()) {
-                            p.getAbilities().allowFlying = false;
-                            p.getAbilities().flying = false;
-                        }
-                        p.sendAbilitiesUpdate();
-                        p.setInvisible(false);
-                    }
-                    this.triggerCooldown(instance);
-                }
-            }
-        });
     }
 
     @Override
@@ -310,48 +273,6 @@ public class WarpGateQuirk extends QuirkSystem.Quirk {
 
                 tickPortal(world, startPos, targetPos, entity);
                 tickPortal(world, targetPos, startPos, entity);
-            }
-        }
-
-        // --- 2. Handle Temporary Portals (Ability 4 Aftermath) ---
-        if (data.runtimeTags.containsKey("WARP_TEMP_PORTAL_ACTIVE")) {
-            int timer = Integer.parseInt(data.runtimeTags.getOrDefault("WARP_TEMP_PORTAL_TIMER", "0"));
-
-            if (timer > 0) {
-                double startX = Double.parseDouble(data.runtimeTags.get("WARP_START_X"));
-                double startY = Double.parseDouble(data.runtimeTags.get("WARP_START_Y"));
-                double startZ = Double.parseDouble(data.runtimeTags.get("WARP_START_Z"));
-
-                double endX = Double.parseDouble(data.runtimeTags.get("WARP_TEMP_END_X"));
-                double endY = Double.parseDouble(data.runtimeTags.get("WARP_TEMP_END_Y"));
-                double endZ = Double.parseDouble(data.runtimeTags.get("WARP_TEMP_END_Z"));
-
-                Vec3d startPos = new Vec3d(startX, startY, startZ);
-                Vec3d endPos = new Vec3d(endX, endY, endZ);
-
-                tickPortal(world, startPos, endPos, entity);
-                tickPortal(world, endPos, startPos, entity);
-
-                data.runtimeTags.put("WARP_TEMP_PORTAL_TIMER", String.valueOf(timer - 1));
-            } else {
-                data.runtimeTags.remove("WARP_TEMP_PORTAL_ACTIVE");
-                data.runtimeTags.remove("WARP_TEMP_PORTAL_TIMER");
-            }
-        }
-
-        // --- 3. Handle Active Mist Body (Ability 4 Active) ---
-        if (data.runtimeTags.containsKey("WARP_MIST_BODY")) {
-            if (data.currentStamina < 0.5) {
-                getAbilities().get(3).onActivate(entity, data, instance); // Force Toggle Off
-                return;
-            }
-            data.currentStamina -= 0.5;
-            entity.fallDistance = 0;
-
-            entity.getWorld().addParticle(ParticleTypes.SQUID_INK, entity.getX(), entity.getY()+0.5, entity.getZ(), 0, 0, 0);
-
-            if (entity.age % 20 == 0 && entity instanceof ServerPlayerEntity sp) {
-                PlusUltraNetwork.sync(sp);
             }
         }
     }

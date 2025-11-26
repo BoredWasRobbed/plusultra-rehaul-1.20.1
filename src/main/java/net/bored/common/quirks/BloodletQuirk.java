@@ -46,6 +46,11 @@ public class BloodletQuirk extends QuirkSystem.Quirk {
                 entity.swingHand(Hand.MAIN_HAND, true);
                 entity.getWorld().playSound(null, entity.getX(), entity.getY(), entity.getZ(), SoundEvents.ENTITY_PLAYER_ATTACK_SWEEP, SoundCategory.PLAYERS, 1.0f, 0.5f);
 
+                // Clear negative blood-related effects
+                entity.removeStatusEffect(StatusEffects.POISON);
+                entity.removeStatusEffect(StatusEffects.WITHER);
+                entity.removeStatusEffect(StatusEffects.NAUSEA);
+
                 // EXPEL LOGIC (Damage)
                 float damage = 6.0f + (data.strength * 0.5f);
                 Box box = entity.getBoundingBox().expand(4.0); // 4 block radius

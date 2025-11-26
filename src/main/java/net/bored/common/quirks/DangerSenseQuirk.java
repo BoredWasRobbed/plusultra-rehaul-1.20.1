@@ -1,5 +1,6 @@
 package net.bored.common.quirks;
 
+import net.bored.api.IQuirkDataAccessor;
 import net.bored.api.QuirkSystem;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.LivingEntity;
@@ -26,13 +27,62 @@ public class DangerSenseQuirk extends QuirkSystem.Quirk {
 
     @Override
     public void registerAbilities() {
-        // Passive quirk, no active abilities needed.
+        // Ability 1: Toggle Sense
+        this.addAbility(new QuirkSystem.Ability("Toggle Sense", QuirkSystem.AbilityType.TOGGLE, 20, 1, 0) {
+            @Override
+            public void onActivate(LivingEntity entity, QuirkSystem.QuirkData data, QuirkSystem.QuirkData.QuirkInstance instance) {
+                if (data.runtimeTags.containsKey("DANGER_SENSE_OFF")) {
+                    data.runtimeTags.remove("DANGER_SENSE_OFF");
+                    if (entity instanceof PlayerEntity p) p.sendMessage(Text.of("§6Danger Sense Enabled"), true);
+                } else {
+                    data.runtimeTags.put("DANGER_SENSE_OFF", "true");
+                    if (entity instanceof PlayerEntity p) p.sendMessage(Text.of("§cDanger Sense Disabled"), true);
+                }
+                this.triggerCooldown(instance);
+            }
+        });
     }
 
     @Override
     public void onUpdate(LivingEntity entity, QuirkSystem.QuirkData data, QuirkSystem.QuirkData.QuirkInstance instance) {
-        // Server Side Only: Audio feedback and Chat warnings
-        if (entity.getWorld().isClient) return;
+        // Check if toggled off
+        if (data.runtimeTags.containsKey("DANGER_SENSE_OFF")) {
+            // Reset any client glow if we turned it off
+            if (entity.getWorld().isClient && entity instanceof PlayerEntity) {
+                resetGlow(entity, data);
+            }
+            return;
+        }
+
+        double baseRange = 15.0 + (data.meta * 1.5);
+        Box box = entity.getBoundingBox().expand(baseRange);
+
+        // --- CLIENT SIDE VISUALS ---
+        if (entity.getWorld().isClient) {
+            if (entity instanceof PlayerEntity player && player.isMainPlayer()) {
+                List<Entity> nearby = entity.getWorld().getOtherEntities(entity, box);
+                for (Entity e : nearby) {
+                    boolean isDangerous = false;
+                    if (e instanceof ProjectileEntity p) {
+                        if (!p.isOnGround() && p.getOwner() != entity) isDangerous = true;
+                    } else if (e instanceof HostileEntity m) {
+                        if (m.getTarget() == entity) isDangerous = true;
+                    }
+
+                    if (isDangerous) {
+                        e.setGlowing(true);
+                    } else {
+                        // Only reset glowing if we set it (simple heuristic: close range check)
+                        if (e.isGlowing() && e.squaredDistanceTo(entity) < (baseRange * baseRange)) {
+                            e.setGlowing(false);
+                        }
+                    }
+                }
+            }
+            return; // Stop here for client
+        }
+
+        // --- SERVER SIDE LOGIC (Sound/Chat) ---
 
         // Manage Cooldown
         if (data.runtimeTags.containsKey("DANGER_SENSE_COOLDOWN")) {
@@ -42,14 +92,9 @@ public class DangerSenseQuirk extends QuirkSystem.Quirk {
                     data.runtimeTags.put("DANGER_SENSE_COOLDOWN", String.valueOf(timer - 1));
                     return; // Still on cooldown
                 }
-            } catch (NumberFormatException e) {
-                // Ignore corrupt data
-            }
+            } catch (NumberFormatException e) {}
         }
 
-        // Detection Parameters
-        double baseRange = 15.0 + (data.meta * 1.5);
-        Box box = entity.getBoundingBox().expand(baseRange);
         List<Entity> dangerousEntities = new ArrayList<>();
 
         // 1. Check for Projectiles
@@ -106,5 +151,14 @@ public class DangerSenseQuirk extends QuirkSystem.Quirk {
 
         // Set Cooldown
         data.runtimeTags.put("DANGER_SENSE_COOLDOWN", String.valueOf(cooldown));
+    }
+
+    private void resetGlow(LivingEntity entity, QuirkSystem.QuirkData data) {
+        double range = 15.0 + (data.meta * 1.5);
+        Box box = entity.getBoundingBox().expand(range);
+        List<Entity> nearby = entity.getWorld().getOtherEntities(entity, box);
+        for (Entity e : nearby) {
+            if (e.isGlowing()) e.setGlowing(false);
+        }
     }
 }

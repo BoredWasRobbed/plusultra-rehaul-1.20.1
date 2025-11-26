@@ -113,9 +113,9 @@ public class CopyQuirk extends QuirkSystem.Quirk {
                         String copiedId = slotData.getString("QuirkId");
                         QuirkSystem.Quirk copiedQuirk = QuirkRegistry.get(new Identifier(copiedId));
                         if (copiedQuirk != null) {
-                            QuirkSystem.QuirkData.QuirkInstance fakeInstance = createFakeInstance(instance, slotData, copiedId, i);
-                            copiedQuirk.onUpdate(entity, data, fakeInstance);
-                            saveFakeInstance(instance, fakeInstance, i);
+                            QuirkSystem.QuirkData.QuirkInstance fake = createFakeInstance(instance, slotData, copiedId, i);
+                            copiedQuirk.onUpdate(entity, data, fake);
+                            saveFakeInstance(instance, fake, i);
                         }
                     }
                 } else {
@@ -245,6 +245,13 @@ public class CopyQuirk extends QuirkSystem.Quirk {
 
         @Override
         public void onActivate(LivingEntity entity, QuirkSystem.QuirkData data, QuirkSystem.QuirkData.QuirkInstance instance) {
+            // Cancel if already trying to copy to this slot
+            if (data.runtimeTags.containsKey("COPY_MODE_SLOT") && data.runtimeTags.get("COPY_MODE_SLOT").equals(String.valueOf(slotIndex))) {
+                data.runtimeTags.remove("COPY_MODE_SLOT");
+                if (entity instanceof PlayerEntity p) p.sendMessage(Text.of("§7Copy mode cancelled."), true);
+                return;
+            }
+
             // Set tag for AttackHandler
             data.runtimeTags.put("COPY_MODE_SLOT", String.valueOf(slotIndex));
             // Ensure no slot is active when trying to copy

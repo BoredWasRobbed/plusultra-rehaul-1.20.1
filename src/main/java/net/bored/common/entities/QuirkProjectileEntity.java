@@ -13,6 +13,7 @@ import net.minecraft.entity.data.TrackedData;
 import net.minecraft.entity.data.TrackedDataHandlerRegistry;
 import net.minecraft.entity.projectile.PersistentProjectileEntity;
 import net.minecraft.item.ItemStack;
+import net.minecraft.item.Items;
 import net.minecraft.network.listener.ClientPlayPacketListener;
 import net.minecraft.network.packet.Packet;
 import net.minecraft.network.packet.s2c.play.EntitySpawnS2CPacket;
@@ -30,7 +31,7 @@ import net.minecraft.world.World;
 
 public class QuirkProjectileEntity extends PersistentProjectileEntity {
 
-    // 0 = Flick, 1 = Warp Shot, 2 = Portal
+    // 0 = Flick, 1 = Warp Shot, 2 = Portal, 3 = Marble
     private static final TrackedData<Integer> TYPE = DataTracker.registerData(QuirkProjectileEntity.class, TrackedDataHandlerRegistry.INTEGER);
     private static final TrackedData<Float> POWER = DataTracker.registerData(QuirkProjectileEntity.class, TrackedDataHandlerRegistry.FLOAT);
 
@@ -55,7 +56,11 @@ public class QuirkProjectileEntity extends PersistentProjectileEntity {
         if (type == 2) { // Portal
             this.setNoGravity(true);
             this.setVelocity(0, 0, 0);
-        } else {
+        } else if (type == 3) { // Marble
+            this.setNoGravity(false);
+        } else if (type == 1) { // Warp Shot
+            this.setNoGravity(true);
+        } else { // Flick
             this.setNoGravity(true);
         }
         this.setDamage(dmg);
@@ -80,7 +85,13 @@ public class QuirkProjectileEntity extends PersistentProjectileEntity {
     }
 
     @Override
-    protected ItemStack asItemStack() { return ItemStack.EMPTY; }
+    protected ItemStack asItemStack() {
+        // Render as Heart of the Sea for Marble Type
+        if (this.dataTracker.get(TYPE) == 3) {
+            return new ItemStack(Items.HEART_OF_THE_SEA);
+        }
+        return ItemStack.EMPTY;
+    }
 
     @Override
     public void tick() {
@@ -89,7 +100,16 @@ public class QuirkProjectileEntity extends PersistentProjectileEntity {
         float powerPercent = this.dataTracker.get(POWER);
         int type = this.dataTracker.get(TYPE);
 
-        // --- PORTAL LOGIC (Type 2) ---
+        // --- TYPE 3: MARBLE ---
+        if (type == 3) {
+            // Just particles, actual logic handled by Quirk (Pressing ability again)
+            if (this.getWorld().isClient) {
+                this.getWorld().addParticle(ParticleTypes.BUBBLE, this.getX(), this.getY(), this.getZ(), 0, 0, 0);
+            }
+            return;
+        }
+
+        // --- TYPE 2: PORTAL ---
         if (type == 2) {
             this.setVelocity(0,0,0);
 
@@ -202,6 +222,12 @@ public class QuirkProjectileEntity extends PersistentProjectileEntity {
         int type = this.dataTracker.get(TYPE);
         Entity target = entityHitResult.getEntity();
 
+        if (type == 3) { // Marble Hit
+            // Bounce off, don't do damage, just exist until second press
+            this.setVelocity(this.getVelocity().multiply(-0.5, -0.5, -0.5));
+            return;
+        }
+
         if (type == 1) { // WARP SHOT
             teleportEntity(target);
             // No impact sound here, teleportEntity handles the TP sound.
@@ -226,6 +252,13 @@ public class QuirkProjectileEntity extends PersistentProjectileEntity {
         int type = this.dataTracker.get(TYPE);
 
         if (type == 2) return; // Portals ignore block hits
+
+        if (type == 3) { // Marble Hit
+            this.getWorld().playSound(null, this.getX(), this.getY(), this.getZ(), SoundEvents.BLOCK_GLASS_HIT, SoundCategory.NEUTRAL, 1.0f, 1.0f);
+            // Stick or Bounce logic could go here, for now standard physics applies
+            super.onBlockHit(blockHitResult);
+            return;
+        }
 
         if (type == 1) { // Warp Shot
             // Play subtle magic sound instead of arrow hit

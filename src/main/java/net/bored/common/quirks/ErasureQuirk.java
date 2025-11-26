@@ -114,7 +114,8 @@ public class ErasureQuirk extends QuirkSystem.Quirk {
                 int targetId = Integer.parseInt(data.runtimeTags.get("ERASURE_TARGET_ID"));
                 Entity targetEntity = entity.getWorld().getEntityById(targetId);
 
-                double cost = 0.5; // Cost per tick
+                // INCREASED COST: 2.5 per tick (was 0.5)
+                double cost = 2.5;
 
                 if (targetEntity instanceof LivingEntity target && target.isAlive()) {
                     // Apply Erasure
@@ -152,8 +153,9 @@ public class ErasureQuirk extends QuirkSystem.Quirk {
 
         // --- GROUP ERASE ---
         if (data.runtimeTags.containsKey("ERASURE_GROUP_ACTIVE")) {
-            double baseCost = 0.5;
-            double costPerTarget = 1.0;
+            // INCREASED BASE COST: 3.0 + 2.0 per target
+            double baseCost = 3.0;
+            double costPerTarget = 2.0;
             double currentCost = baseCost;
 
             Vec3d start = entity.getEyePos();

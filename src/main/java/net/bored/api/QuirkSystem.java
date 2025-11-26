@@ -295,6 +295,21 @@ public class QuirkSystem {
                 assignRandomBloodType();
             }
 
+            // --- BLOOD DRYING LOGIC ---
+            if (runtimeTags.containsKey("BLOOD_STOLEN_FROM")) {
+                int timer = Integer.parseInt(runtimeTags.getOrDefault("BLOOD_DRY_TIMER", "0"));
+                if (timer > 0) {
+                    runtimeTags.put("BLOOD_DRY_TIMER", String.valueOf(timer - 1));
+                } else {
+                    runtimeTags.remove("BLOOD_STOLEN_FROM");
+                    runtimeTags.remove("BLOOD_STOLEN_TYPE");
+                    runtimeTags.remove("BLOOD_DRY_TIMER");
+                    if (entity instanceof PlayerEntity p) {
+                        p.sendMessage(Text.of("§cThe blood on your blade has dried."), true);
+                    }
+                }
+            }
+
             // --- ERASURE CHECK: DECAY TIMER ---
             if (runtimeTags.containsKey("ERASED")) {
                 int timer = Integer.parseInt(runtimeTags.getOrDefault("ERASED", "0"));
